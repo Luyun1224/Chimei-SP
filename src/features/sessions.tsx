@@ -6,6 +6,7 @@ import { AppError, validateSessionInput } from '../../shared/validate';
 import { addDays, diffMinutes, fmtDate, fmtDuration, toMinutes } from '../../shared/time';
 import { notifyState } from '../../shared/template';
 import { topicOf } from '../../shared/stats';
+import { API_VERSION } from '../../shared/version';
 import { useData, spName } from '../lib/store';
 import { ApiCallError, call, newRequestId } from '../lib/api';
 import { navigate } from '../lib/router';
@@ -121,6 +122,10 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
       validateSessionInput(payload());
     } catch (e) {
       if (e instanceof AppError) setErrors(((e.details as { fields: Record<string, string> })?.fields) || {});
+      return;
+    }
+    if (snap?.mode === 'gas' && (snap.apiVersion || 0) < API_VERSION) {
+      toast('error', '後端 Code.gs 版本較舊，無法儲存多教案排程。請更新 Code.gs 並部署「新版本」後再試');
       return;
     }
     setSaving(true);

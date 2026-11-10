@@ -128,6 +128,8 @@ export interface CurrentUser {
 
 export interface Snapshot {
   mode: 'gas' | 'demo';
+  /** 後端協定版本（舊版後端沒有此欄位） */
+  apiVersion?: number;
   user: CurrentUser;
   today: string;
   serverTime: string;

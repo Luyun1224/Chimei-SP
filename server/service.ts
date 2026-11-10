@@ -7,6 +7,7 @@ import type {
 } from '../shared/types';
 import { AppError, clean, validateSessionInput, validateSpInput, validateVerifyInput, type NormalizedSession } from '../shared/validate';
 import { topicOf } from '../shared/stats';
+import { API_VERSION } from '../shared/version';
 import { DEFAULT_SETTINGS, sessionFingerprint } from '../shared/template';
 import { diffMinutes, toMinutes, toZonedIso } from '../shared/time';
 import { computeStats } from '../shared/stats';
@@ -168,6 +169,7 @@ export function createService({ repo, env, calendar }: Deps) {
   const handlers: { [A in ActionName]: Handler<A> } = {
     bootstrap: () => ({
       mode: 'gas',
+      apiVersion: API_VERSION,
       user: { email: env.user(), isAdmin: true },
       today: env.today(),
       serverTime: env.nowIso(),

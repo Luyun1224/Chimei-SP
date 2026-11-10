@@ -276,6 +276,9 @@ var SPHub = (() => {
     };
   }
 
+  // shared/version.ts
+  var API_VERSION = 3;
+
   // shared/template.ts
   var DEFAULT_INDIVIDUAL_TEMPLATE = `{SP姓名} 您好，提醒您{相對日}有標準化病人（SP）演出安排：
 
@@ -445,6 +448,7 @@ var SPHub = (() => {
     const handlers = {
       bootstrap: () => ({
         mode: "gas",
+        apiVersion: API_VERSION,
         user: { email: env.user(), isAdmin: true },
         today: env.today(),
         serverTime: env.nowIso(),
