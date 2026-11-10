@@ -63,6 +63,10 @@ var SPHub = (() => {
   function yearOf(date) {
     return Number(date.slice(0, 4));
   }
+  function todayInTaipei(now = /* @__PURE__ */ new Date()) {
+    const t = new Date(now.getTime() + 8 * 36e5);
+    return t.toISOString().slice(0, 10);
+  }
   function toZonedIso(date, time) {
     return `${date}T${time}:00${TZ_OFFSET}`;
   }
@@ -94,23 +98,48 @@ var SPHub = (() => {
   var SP_STATUS = ["active", "paused", "inactive"];
   function validateSpInput(raw) {
     const v = {
-      name: clean(raw.name, MAX.name),
+      name: clean(raw.name, MAX.name).replace(/\s+/g, ""),
       phone: clean(raw.phone, 20),
       email: clean(raw.email, 120).toLowerCase(),
       lineNote: clean(raw.lineNote, MAX.text),
       status: raw.status || "active",
-      joinDate: clean(raw.joinDate, 10),
-      certification: clean(raw.certification, MAX.text),
+      gender: clean(raw.gender, 4),
+      birthday: clean(raw.birthday, 12).replace(/[/-]/g, "."),
+      firstCertYear: clean(raw.firstCertYear, 4),
+      assocCert: clean(raw.assocCert, 20),
+      certNo: clean(raw.certNo, 30),
+      role: clean(raw.role, 10),
+      level: clean(raw.level, 10),
+      certStatus: clean(raw.certStatus, 20),
+      isMember: clean(raw.isMember, 4),
       note: clean(raw.note, MAX.note)
     };
     const e = {};
     if (!v.name) e.name = "請輸入 SP 姓名";
     if (v.phone && !PHONE_RE.test(v.phone)) e.phone = "電話格式不正確";
     if (v.email && !EMAIL_RE.test(v.email)) e.email = "電子郵件格式不正確";
-    if (!SP_STATUS.includes(v.status)) e.status = "身分狀態不正確";
-    if (v.joinDate && !isValidDate(v.joinDate)) e.joinDate = "加入日期格式不正確";
+    if (!SP_STATUS.includes(v.status)) e.status = "在職狀態不正確";
+    if (v.birthday && !rocDateParts(v.birthday)) e.birthday = "生日請用民國格式，例如 43.08.04";
+    if (v.firstCertYear && !/^\d{2,3}$/.test(v.firstCertYear)) e.firstCertYear = "首次認證請填民國年，例如 101";
     fail(e);
     return v;
+  }
+  function rocDateParts(s2) {
+    const m = /^(\d{2,3})\.(\d{1,2})\.(\d{1,2})$/.exec(s2.trim());
+    if (!m) return null;
+    const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    return mo >= 1 && mo <= 12 && d >= 1 && d <= 31 ? [y, mo, d] : null;
+  }
+  function ageOf(birthday, today) {
+    const p = rocDateParts(birthday || "");
+    if (!p) return "";
+    const age = Number(today.slice(0, 4)) - 1911 - p[0];
+    return age >= 0 ? String(age) : "";
+  }
+  function seniorityOf(firstCertYear, today) {
+    if (!/^\d{2,3}$/.test((firstCertYear || "").trim())) return "";
+    const n = Number(today.slice(0, 4)) - 1911 - Number(firstCertYear);
+    return n >= 0 ? String(n) : "";
   }
   var uniq = (a) => [...new Set(a)];
   function validateSessionInput(raw) {
@@ -289,7 +318,7 @@ var SPHub = (() => {
   }
 
   // shared/version.ts
-  var API_VERSION = 4;
+  var API_VERSION = 5;
 
   // shared/template.ts
   var DEFAULT_INDIVIDUAL_TEMPLATE = `{SP姓名} 您好，提醒您{相對日}有標準化病人（SP）演出安排：
@@ -539,8 +568,15 @@ var SPHub = (() => {
             email: "",
             lineNote: "",
             status: "active",
-            joinDate: "",
-            certification: "",
+            gender: "",
+            birthday: "",
+            firstCertYear: "",
+            assocCert: "",
+            certNo: "",
+            role: "SP",
+            level: "",
+            certStatus: "",
+            isMember: "",
             note: "",
             createdAt: now,
             createdBy: actor,
@@ -924,12 +960,21 @@ var SPHub = (() => {
       columns: [
         s("spId", "SP編號"),
         s("name", "姓名"),
+        s("gender", "性別"),
+        { key: "_age", type: "string", label: "年齡", compute: (p) => ageOf(p.birthday, todayInTaipei()) },
+        s("birthday", "生日"),
+        s("firstCertYear", "首次認證"),
+        { key: "_seniority", type: "string", label: "SP年資", compute: (p) => seniorityOf(p.firstCertYear, todayInTaipei()) },
+        s("assocCert", "學會認證"),
+        s("certNo", "證書字號"),
+        s("role", "身分"),
+        s("level", "級數"),
+        s("certStatus", "證書狀態"),
+        s("isMember", "是否協會會員"),
+        { key: "status", type: "string", label: "在職狀態", enum: ENUMS.spStatus, alt: ["身分狀態"] },
         s("phone", "聯絡電話"),
         s("email", "電子郵件"),
         s("lineNote", "LINE顯示名稱/備註"),
-        s("status", "身分狀態", ENUMS.spStatus),
-        s("joinDate", "加入日期"),
-        s("certification", "認證狀態"),
         s("note", "備註"),
         s("createdAt", "建立時間"),
         s("createdBy", "建立者"),
@@ -1042,12 +1087,16 @@ var SPHub = (() => {
   };
   var BOOL_TRUE = ["TRUE", "true", "是", "Y", "1"];
   function colIndex(header, c) {
-    const i = header.indexOf(c.label);
-    return i >= 0 ? i : header.indexOf(c.key);
+    for (const name of [c.label, ...c.alt || [], c.key]) {
+      const i = header.indexOf(name);
+      if (i >= 0) return i;
+    }
+    return -1;
   }
   function toRow(t, obj) {
     const def = TABLES[t];
     return def.columns.map((c) => {
+      if (c.compute) return c.compute(obj);
       const v = obj[c.key];
       if (c.type === "bool") return v ? "是" : "否";
       if (v === null || v === void 0) return "";
@@ -1060,6 +1109,7 @@ var SPHub = (() => {
     const def = TABLES[t];
     const out = {};
     for (const c of def.columns) {
+      if (c.compute) continue;
       const idx = colIndex(header, c);
       let v = idx >= 0 ? row[idx] : "";
       if (v instanceof Date) {
@@ -1123,7 +1173,7 @@ var SPHub = (() => {
       const def = TABLES[t];
       const vals = toRow(t, obj);
       return header.map((h) => {
-        const i = def.columns.findIndex((c) => c.label === h || c.key === h);
+        const i = def.columns.findIndex((c) => c.label === h || c.key === h || (c.alt || []).includes(h));
         return i >= 0 ? sheetSafe(vals[i]) : "";
       });
     }
@@ -1463,7 +1513,7 @@ var SPHub = (() => {
       const values = sh.getLastRow() ? sh.getDataRange().getValues() : [[]];
       const oldHeader = (values[0] || []).map(String);
       const known = def.columns;
-      const extras = oldHeader.filter((h) => h && !known.some((c) => c.label === h || c.key === h));
+      const extras = oldHeader.filter((h) => h && !known.some((c) => c.label === h || c.key === h || (c.alt || []).includes(h)));
       const header = [...known.map((c) => c.label), ...extras];
       const rows = values.slice(1).filter((r) => r.some((x) => x !== "" && x !== null)).map((r) => {
         const obj = fromRow(name, oldHeader, r, fmtGasDate);

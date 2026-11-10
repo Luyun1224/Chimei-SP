@@ -101,7 +101,9 @@ describe('Apps Script Sheets 存取層（中文工作表）', () => {
     expect(sessions[1][h.indexOf('日曆同步狀態')]).toBe('已同步');
     expect(sessions[1][h.indexOf('已刪除')]).toBe('否');
     expect(book.getSheetByName('SP人員主檔')!.rows[1][1]).toBe(`'=HYPERLINK("x")`);
-    expect(book.getSheetByName('SP人員主檔')!.rows[1][5]).toBe('在職');
+    const spRows = book.getSheetByName('SP人員主檔')!.rows;
+    expect(spRows[0].slice(0, 13)).toEqual(['SP編號', '姓名', '性別', '年齡', '生日', '首次認證', 'SP年資', '學會認證', '證書字號', '身分', '級數', '證書狀態', '是否協會會員']);
+    expect(spRows[1][(spRows[0] as string[]).indexOf('在職狀態')]).toBe('在職');
 
     // 重新讀取：中文 → 代碼；Sheets 自動轉 Date 也能還原
     sessions[1][h.indexOf('演出日期')] = new Date('2026-11-09T00:00:00+08:00');
@@ -135,6 +137,8 @@ describe('Apps Script Sheets 存取層（中文工作表）', () => {
     legacySettings.rows.push(['key', 'value', 'updatedAt'], ['calendarId', 'old@group.calendar.google.com', ''], ['units', '["護理部"]', '']);
     const spSheet = book.getSheetByName('SP_Master')!;
     const spRow = TABLES.sps.columns.map((c) => ({ spId: 'SP-1', name: '王小明', status: 'paused', version: '1' } as Record<string, string>)[c.key] ?? '');
+    // 模擬舊版：狀態欄表頭為「身分狀態」
+    spSheet.rows[0] = spSheet.rows[0].map((h) => (h === 'status' ? '身分狀態' : h));
     spSheet.rows.push(spRow);
 
     const before = createService({ repo: createSheetsRepo(ss()), env: env(), calendar: createMockCalendar().gateway }).dispatch('bootstrap', {});
@@ -146,7 +150,7 @@ describe('Apps Script Sheets 存取層（中文工作表）', () => {
     const sp = book.getSheetByName('SP人員主檔')!.rows;
     expect(sp[0][0]).toBe('SP編號');
     expect(sp[1][1]).toBe('王小明');
-    expect(sp[1][5]).toBe('暫停');
+    expect(sp[1][(sp[0] as string[]).indexOf('在職狀態')]).toBe('暫停');
     const st = book.getSheetByName('系統設定')!.rows;
     expect(st.find((r) => r[0] === 'Google日曆ID')![1]).toBe('old@group.calendar.google.com');
     expect(st.find((r) => r[0] === '常用申請單位')![1]).toBe('護理部');

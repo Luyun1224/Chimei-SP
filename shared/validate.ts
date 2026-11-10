@@ -36,23 +36,54 @@ const SP_STATUS: SpStatus[] = ['active', 'paused', 'inactive'];
 
 export function validateSpInput(raw: SpInput): Required<SpInput> {
   const v: Required<SpInput> = {
-    name: clean(raw.name, MAX.name),
+    name: clean(raw.name, MAX.name).replace(/\s+/g, ''),
     phone: clean(raw.phone, 20),
     email: clean(raw.email, 120).toLowerCase(),
     lineNote: clean(raw.lineNote, MAX.text),
     status: (raw.status || 'active') as SpStatus,
-    joinDate: clean(raw.joinDate, 10),
-    certification: clean(raw.certification, MAX.text),
+    gender: clean(raw.gender, 4),
+    birthday: clean(raw.birthday, 12).replace(/[/-]/g, '.'),
+    firstCertYear: clean(raw.firstCertYear, 4),
+    assocCert: clean(raw.assocCert, 20),
+    certNo: clean(raw.certNo, 30),
+    role: clean(raw.role, 10),
+    level: clean(raw.level, 10),
+    certStatus: clean(raw.certStatus, 20),
+    isMember: clean(raw.isMember, 4),
     note: clean(raw.note, MAX.note),
   };
   const e: Errors = {};
   if (!v.name) e.name = '請輸入 SP 姓名';
   if (v.phone && !PHONE_RE.test(v.phone)) e.phone = '電話格式不正確';
   if (v.email && !EMAIL_RE.test(v.email)) e.email = '電子郵件格式不正確';
-  if (!SP_STATUS.includes(v.status)) e.status = '身分狀態不正確';
-  if (v.joinDate && !isValidDate(v.joinDate)) e.joinDate = '加入日期格式不正確';
+  if (!SP_STATUS.includes(v.status)) e.status = '在職狀態不正確';
+  if (v.birthday && !rocDateParts(v.birthday)) e.birthday = '生日請用民國格式，例如 43.08.04';
+  if (v.firstCertYear && !/^\d{2,3}$/.test(v.firstCertYear)) e.firstCertYear = '首次認證請填民國年，例如 101';
   fail(e);
   return v;
+}
+
+/** 解析民國日期 43.08.04 → [43, 8, 4] */
+export function rocDateParts(s: string): [number, number, number] | null {
+  const m = /^(\d{2,3})\.(\d{1,2})\.(\d{1,2})$/.exec(s.trim());
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  return mo >= 1 && mo <= 12 && d >= 1 && d <= 31 ? [y, mo, d] : null;
+}
+
+/** 年齡＝今年民國年－出生民國年（與原名冊計算方式相同）；無生日回傳空字串 */
+export function ageOf(birthday: string, today: string): string {
+  const p = rocDateParts(birthday || '');
+  if (!p) return '';
+  const age = Number(today.slice(0, 4)) - 1911 - p[0];
+  return age >= 0 ? String(age) : '';
+}
+
+/** SP 年資＝今年民國年－首次認證年 */
+export function seniorityOf(firstCertYear: string, today: string): string {
+  if (!/^\d{2,3}$/.test((firstCertYear || '').trim())) return '';
+  const n = Number(today.slice(0, 4)) - 1911 - Number(firstCertYear);
+  return n >= 0 ? String(n) : '';
 }
 
 export interface NormalizedSession {

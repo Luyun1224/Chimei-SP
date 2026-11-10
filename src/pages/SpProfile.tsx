@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import { ArrowLeft, ChevronDown, Download, Pencil } from 'lucide-react';
 import { computeProfile, isCountable, topicOf } from '../../shared/stats';
+import { ageOf, seniorityOf } from '../../shared/validate';
 import { fmtDate, fmtDuration, fmtHours, yearOf } from '../../shared/time';
 import { useSnap } from '../lib/store';
 import { navigate, type Route } from '../lib/router';
@@ -60,8 +61,15 @@ export default function SpProfile({ route }: { route: Route }) {
             <h1 className="display text-[36px] font-semibold leading-tight text-pine">{sp.name}</h1>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px] text-ink-2">
               <Badge tone={SP_STATUS[sp.status].tone}>{SP_STATUS[sp.status].label}</Badge>
-              {sp.certification && <Badge tone="gold">{sp.certification}</Badge>}
-              {sp.joinDate && <span>加入 {fmtDate(sp.joinDate)}</span>}
+              {sp.level && <Badge tone="gold">{sp.level}</Badge>}
+              {sp.role && <Badge>{sp.role}</Badge>}
+              {sp.certStatus && <Badge tone={sp.certStatus === '符合' ? 'ok' : 'warn'}>證書{sp.certStatus}</Badge>}
+              {sp.gender && <span>{sp.gender}</span>}
+              {ageOf(sp.birthday, snap.today) && <span>· {ageOf(sp.birthday, snap.today)} 歲</span>}
+              {seniorityOf(sp.firstCertYear, snap.today) && <span>· SP 年資 {seniorityOf(sp.firstCertYear, snap.today)} 年（{sp.firstCertYear} 年首次認證）</span>}
+              {sp.assocCert && <span>· 學會認證 {sp.assocCert}</span>}
+              {sp.certNo && <span>· 證書 {sp.certNo}</span>}
+              {sp.isMember && <span>· 協會會員：{sp.isMember}</span>}
               {sp.phone && <span>· {sp.phone}</span>}
               {sp.email && <span>· {sp.email}</span>}
               {sp.lineNote && <span>· LINE：{sp.lineNote}</span>}

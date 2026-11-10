@@ -61,7 +61,7 @@ export const demoControls = {
     call('settings.save', { patch: { calendarId: 'demo-calendar@group.calendar.google.com' } });
     const names = ['王小明', '李美華', '陳志強', '林淑芬', '張家豪', '黃雅婷', '吳建國', '劉怡君', '蔡宗翰', '許雅雯', '鄭文彬', '謝佩珊'];
     const sps = names.map((name, i) =>
-      (call('sp.save', { input: { name, status: i === 10 ? 'paused' : 'active', phone: `09${String(12345678 + i * 1111).slice(0, 8)}`, certification: i % 3 ? '初階認證' : '進階認證', joinDate: `20${18 + (i % 6)}-0${1 + (i % 9)}-15` } }) as { sps: { spId: string }[] }).sps[0].spId,
+      (call('sp.save', { input: { name, status: i === 10 ? 'paused' : 'active', phone: `09${String(12345678 + i * 1111).slice(0, 8)}`, gender: i % 4 ? '女' : '男', birthday: `${45 + i * 2}.0${1 + (i % 9)}.1${i % 9}`, firstCertYear: String(101 + (i % 12)), role: i % 5 ? 'SP' : 'SPT', level: `SP${i % 4}`, certStatus: i % 3 ? '符合' : '尚未認證', isMember: i % 2 ? '是' : '否' } }) as { sps: { spId: string }[] }).sps[0].spId,
     );
     const units = ['醫學系 UGY', '護理部', 'PGY 訓練', '藥劑部', '醫學系 Clerk', '急診醫學部'];
     const topics = ['胸痛病史詢問', '腹痛身體檢查', '糖尿病衛教', '壞消息告知', '術前說明與同意', '頭痛鑑別診斷', '用藥諮詢', '跌倒風險評估', '出院衛教'];

@@ -4,16 +4,23 @@
  * 為相容舊版英文工作表：讀取時同時接受英文表頭／英文代碼，setupSpreadsheet 會把舊表轉為中文。
  */
 import type { Assignment, AuditEntry, NotificationEntry, SP, Session, Settings } from '../shared/types';
+import { ageOf, seniorityOf } from '../shared/validate';
+import { todayInTaipei } from '../shared/time';
 
 /** 欄位型別：決定 Sheets 字串 ↔ 物件的轉換 */
 export type ColType = 'string' | 'number' | 'nullable-number' | 'bool';
 
 export interface ColumnDef<T> {
-  key: keyof T & string;
+  /** 物件欄位；以底線開頭者為「計算欄」（只寫入、不讀回） */
+  key: (keyof T & string) | `_${string}`;
   type: ColType;
   label: string;
   /** 代碼 → 中文 */
   enum?: Record<string, string>;
+  /** 舊版表頭名稱（升級相容） */
+  alt?: string[];
+  /** 計算欄：寫入時依物件計算 */
+  compute?: (obj: T) => string;
 }
 
 export interface TableDef<T> {
@@ -47,8 +54,13 @@ export const TABLES = {
     legacySheet: 'SP_Master',
     idKey: 'spId',
     columns: [
-      s('spId', 'SP編號'), s('name', '姓名'), s('phone', '聯絡電話'), s('email', '電子郵件'), s('lineNote', 'LINE顯示名稱/備註'),
-      s('status', '身分狀態', ENUMS.spStatus), s('joinDate', '加入日期'), s('certification', '認證狀態'), s('note', '備註'),
+      s('spId', 'SP編號'), s('name', '姓名'), s('gender', '性別'),
+      { key: '_age', type: 'string', label: '年齡', compute: (p: SP) => ageOf(p.birthday, todayInTaipei()) },
+      s('birthday', '生日'), s('firstCertYear', '首次認證'),
+      { key: '_seniority', type: 'string', label: 'SP年資', compute: (p: SP) => seniorityOf(p.firstCertYear, todayInTaipei()) },
+      s('assocCert', '學會認證'), s('certNo', '證書字號'), s('role', '身分'), s('level', '級數'), s('certStatus', '證書狀態'), s('isMember', '是否協會會員'),
+      { key: 'status', type: 'string', label: '在職狀態', enum: ENUMS.spStatus, alt: ['身分狀態'] },
+      s('phone', '聯絡電話'), s('email', '電子郵件'), s('lineNote', 'LINE顯示名稱/備註'), s('note', '備註'),
       s('createdAt', '建立時間'), s('createdBy', '建立者'), s('updatedAt', '修改時間'), s('updatedBy', '修改者'),
       { key: 'version', type: 'number', label: '版本' },
     ],
@@ -129,16 +141,20 @@ export type TableName = keyof RowTypes;
 const BOOL_TRUE = ['TRUE', 'true', '是', 'Y', '1'];
 
 /** 欄位在表頭中的位置：優先中文表頭，相容英文代碼表頭 */
-export function colIndex(header: string[], c: { key: string; label: string }): number {
-  const i = header.indexOf(c.label);
-  return i >= 0 ? i : header.indexOf(c.key);
+export function colIndex(header: string[], c: { key: string; label: string; alt?: string[] }): number {
+  for (const name of [c.label, ...(c.alt || []), c.key]) {
+    const i = header.indexOf(name);
+    if (i >= 0) return i;
+  }
+  return -1;
 }
 
 /** 物件 → Sheets 一列（依 def 欄位順序；狀態值轉中文） */
 export function toRow<K extends TableName>(t: K, obj: RowTypes[K]): string[] {
   const def = TABLES[t] as unknown as TableDef<RowTypes[K]>;
   return def.columns.map((c) => {
-    const v = obj[c.key] as unknown;
+    if (c.compute) return c.compute(obj);
+    const v = obj[c.key as keyof RowTypes[K]] as unknown;
     if (c.type === 'bool') return v ? '是' : '否';
     if (v === null || v === undefined) return '';
     const str = String(v);
@@ -151,6 +167,7 @@ export function fromRow<K extends TableName>(t: K, header: string[], row: unknow
   const def = TABLES[t] as unknown as TableDef<RowTypes[K]>;
   const out: Record<string, unknown> = {};
   for (const c of def.columns) {
+    if (c.compute) continue;
     const idx = colIndex(header, c);
     let v = idx >= 0 ? row[idx] : '';
     if (v instanceof Date) {

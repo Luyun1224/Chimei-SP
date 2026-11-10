@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pencil, Plus, Search, UserRound, Users } from 'lucide-react';
+import { Download, Pencil, Plus, Search, UserRound, Users } from 'lucide-react';
 import type { SP, SpInput, SpStatus } from '../../shared/types';
-import { AppError, validateSpInput } from '../../shared/validate';
+import { AppError, ageOf, seniorityOf, validateSpInput } from '../../shared/validate';
+import { download, toCsv } from '../lib/csv';
 import { fmtDate, fmtHours, yearOf } from '../../shared/time';
 import { isCountable } from '../../shared/stats';
 import { useSnap } from '../lib/store';
@@ -51,7 +52,10 @@ export default function Directory() {
         en="SP Directory"
         title="SP 人員"
         desc="SP_ID 為系統唯一識別碼，改名不影響歷史演出紀錄。停用的 SP 不會出現在排程選單，但保留完整履歷。"
-        actions={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing('new')}>新增 SP</Button>}
+        actions={<>
+          <Button icon={<Download className="size-4" />} onClick={() => exportRoster(rows, snap.today)} disabled={!rows.length}>匯出名冊</Button>
+          <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing('new')}>新增 SP</Button>
+        </>}
       />
       <div className="mb-5 grid grid-cols-3 gap-3 sm:max-w-lg">
         {(['active', 'paused', 'inactive'] as SpStatus[]).map((s) => (
@@ -82,7 +86,7 @@ export default function Directory() {
           <div className="overflow-x-auto">
             <table className="tbl">
               <thead>
-                <tr><th>姓名</th><th>狀態</th><th className="text-right">{year} 核定時數</th><th className="text-right">人次</th><th className="max-md:hidden">最近演出</th><th className="max-lg:hidden">聯絡</th><th className="max-lg:hidden">認證</th><th /></tr>
+                <tr><th>姓名</th><th className="max-md:hidden">性別</th><th className="text-right max-md:hidden">年齡</th><th className="max-lg:hidden">身分</th><th>級數</th><th className="max-lg:hidden">學會認證</th><th className="max-md:hidden">證書狀態</th><th className="text-right">{year} 核定時數</th><th className="text-right max-md:hidden">人次</th><th className="max-xl:hidden">最近演出</th><th>在職</th><th /></tr>
               </thead>
               <tbody>
                 {rows.map((p) => {
@@ -96,12 +100,16 @@ export default function Directory() {
                         </button>
                         {p.lineNote && <div className="ml-10 text-[12px] text-ink-3">LINE：{p.lineNote}</div>}
                       </td>
-                      <td><Badge tone={SP_STATUS[p.status].tone}>{SP_STATUS[p.status].label}</Badge></td>
+                      <td className="max-md:hidden text-ink-2">{p.gender || '—'}</td>
+                      <td className="num text-right max-md:hidden text-ink-2">{ageOf(p.birthday, snap.today) || '—'}</td>
+                      <td className="max-lg:hidden text-ink-2">{p.role || '—'}</td>
+                      <td>{p.level ? <Badge tone="gold">{p.level}</Badge> : <span className="text-ink-3">—</span>}</td>
+                      <td className="num max-lg:hidden text-ink-2">{p.assocCert || '—'}</td>
+                      <td className="max-md:hidden">{p.certStatus ? <Badge tone={p.certStatus === '符合' ? 'ok' : p.certStatus === '尚未認證' ? 'neutral' : 'warn'}>{p.certStatus}</Badge> : <span className="text-ink-3">—</span>}</td>
                       <td className="num text-right font-semibold">{fmtHours(s?.minutes || 0)}</td>
-                      <td className="num text-right">{s?.times || 0}</td>
-                      <td className="num max-md:hidden whitespace-nowrap text-ink-2">{s?.last ? fmtDate(s.last) : '—'}</td>
-                      <td className="max-lg:hidden text-ink-2">{p.phone || '—'}</td>
-                      <td className="max-lg:hidden text-ink-2">{p.certification || '—'}</td>
+                      <td className="num text-right max-md:hidden">{s?.times || 0}</td>
+                      <td className="num max-xl:hidden whitespace-nowrap text-ink-2">{s?.last ? fmtDate(s.last) : '—'}</td>
+                      <td><Badge tone={SP_STATUS[p.status].tone}>{SP_STATUS[p.status].label}</Badge></td>
                       <td className="text-right"><Button size="sm" variant="ghost" icon={<Pencil className="size-3.5" />} onClick={() => setEditing(p)}>編輯</Button></td>
                     </tr>
                   );
@@ -116,7 +124,7 @@ export default function Directory() {
   );
 }
 
-const blank: SpInput = { name: '', phone: '', email: '', lineNote: '', status: 'active', joinDate: '', certification: '', note: '' };
+const blank: SpInput = { name: '', phone: '', email: '', lineNote: '', status: 'active', gender: '', birthday: '', firstCertYear: '', assocCert: '', certNo: '', role: 'SP', level: '', certStatus: '', isMember: '', note: '' };
 
 export function SpFormDrawer({ target, onClose }: { target: SP | 'new' | null; onClose: () => void }) {
   const { mutate } = useSnap();
@@ -128,10 +136,11 @@ export function SpFormDrawer({ target, onClose }: { target: SP | 'new' | null; o
   useEffect(() => {
     if (!target) return;
     setErrors({});
-    setForm(sp ? { name: sp.name, phone: sp.phone, email: sp.email, lineNote: sp.lineNote, status: sp.status, joinDate: sp.joinDate, certification: sp.certification, note: sp.note } : blank);
+    setForm(sp ? { name: sp.name, phone: sp.phone, email: sp.email, lineNote: sp.lineNote, status: sp.status, gender: sp.gender, birthday: sp.birthday, firstCertYear: sp.firstCertYear, assocCert: sp.assocCert, certNo: sp.certNo, role: sp.role, level: sp.level, certStatus: sp.certStatus, isMember: sp.isMember, note: sp.note } : blank);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target]);
   const set = (k: keyof SpInput, v: string) => { setForm((f) => ({ ...f, [k]: v })); setErrors((e) => ({ ...e, [k]: '' })); };
+  const today = useSnap().snap.today;
 
   const save = async () => {
     try {
@@ -152,10 +161,24 @@ export function SpFormDrawer({ target, onClose }: { target: SP | 'new' | null; o
   };
 
   return (
-    <Drawer open={!!target} onClose={onClose} eyebrow={sp ? sp.spId : 'New SP'} title={sp ? `編輯 ${sp.name}` : '新增 SP'} width={500} footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" loading={saving} onClick={save} icon={<UserRound className="size-4" />}>儲存</Button></>}>
+    <Drawer open={!!target} onClose={onClose} eyebrow={sp ? sp.spId : 'New SP'} title={sp ? `編輯 ${sp.name}` : '新增 SP'} width={560} footer={<><Button onClick={onClose}>取消</Button><Button variant="primary" loading={saving} onClick={save} icon={<UserRound className="size-4" />}>儲存</Button></>}>
       <form className="grid grid-cols-2 gap-4" onSubmit={(e) => { e.preventDefault(); save(); }}>
         <Field label="姓名" required error={errors.name} className="col-span-2"><input data-autofocus className={cx('field', errors.name && 'field-error')} value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
-        <Field label="身分狀態" className="col-span-2">
+        <Field label="性別"><Choice value={form.gender || ''} options={['女', '男']} onChange={(v) => set('gender', v)} /></Field>
+        <Field label="生日（民國）" error={errors.birthday} hint={form.birthday && ageOf(form.birthday, today) ? `年齡 ${ageOf(form.birthday, today)} 歲` : '例：43.08.04'}>
+          <input className={cx('field num', errors.birthday && 'field-error')} value={form.birthday} onChange={(e) => set('birthday', e.target.value)} placeholder="43.08.04" />
+        </Field>
+        <Field label="首次認證（民國年）" error={errors.firstCertYear} hint={form.firstCertYear && seniorityOf(form.firstCertYear, today) ? `SP 年資 ${seniorityOf(form.firstCertYear, today)} 年` : '例：101'}>
+          <input className={cx('field num', errors.firstCertYear && 'field-error')} inputMode="numeric" value={form.firstCertYear} onChange={(e) => set('firstCertYear', e.target.value)} placeholder="101" />
+        </Field>
+        <Field label="學會認證"><input className="field num" value={form.assocCert} onChange={(e) => set('assocCert', e.target.value)} placeholder="例：113-115" /></Field>
+        <Field label="證書字號"><input className="field num" value={form.certNo} onChange={(e) => set('certNo', e.target.value)} placeholder="例：(113)0377" /></Field>
+        <Field label="身分"><Choice value={form.role || ''} options={['SP', 'SPT']} onChange={(v) => set('role', v)} /></Field>
+        <Field label="級數"><Choice value={form.level || ''} options={['SP0', 'SP1', 'SP2', 'SP3']} onChange={(v) => set('level', v)} /></Field>
+        <Field label="證書狀態"><Choice value={form.certStatus || ''} options={['符合', '尚未認證', '未符合', '已過效期', '待展延']} onChange={(v) => set('certStatus', v)} /></Field>
+        <Field label="是否協會會員"><Choice value={form.isMember || ''} options={['是', '否']} onChange={(v) => set('isMember', v)} /></Field>
+        <div className="col-span-2 mt-2 border-t border-line pt-4 text-[12px] font-semibold tracking-wide text-ink-3">系統資料</div>
+        <Field label="在職狀態" className="col-span-2">
           <div className="flex gap-2">
             {(['active', 'paused', 'inactive'] as SpStatus[]).map((s) => (
               <button type="button" key={s} onClick={() => set('status', s)} className={cx('flex-1 rounded-[12px] border px-3 py-2 text-[14px] transition', form.status === s ? 'border-pine bg-pine text-white' : 'border-line bg-white hover:border-pine/40')}>{SP_STATUS[s].label}</button>
@@ -165,11 +188,30 @@ export function SpFormDrawer({ target, onClose }: { target: SP | 'new' | null; o
         <Field label="聯絡電話（選填）" error={errors.phone}><input className={cx('field', errors.phone && 'field-error')} inputMode="tel" value={form.phone} onChange={(e) => set('phone', e.target.value)} /></Field>
         <Field label="電子郵件（選填）" error={errors.email}><input className={cx('field', errors.email && 'field-error')} type="email" value={form.email} onChange={(e) => set('email', e.target.value)} /></Field>
         <Field label="LINE 顯示名稱 / 備註（選填）" className="col-span-2" hint="僅供辨識聯絡對象，請勿記錄私人聊天內容"><input className="field" value={form.lineNote} onChange={(e) => set('lineNote', e.target.value)} /></Field>
-        <Field label="加入日期（選填）" error={errors.joinDate}><input type="date" className="field" value={form.joinDate} onChange={(e) => set('joinDate', e.target.value)} /></Field>
-        <Field label="認證狀態（選填）"><input className="field" value={form.certification} onChange={(e) => set('certification', e.target.value)} placeholder="例：進階認證" /></Field>
         <Field label="備註" className="col-span-2"><textarea className="field min-h-20" value={form.note} onChange={(e) => set('note', e.target.value)} /></Field>
         <button type="submit" hidden />
       </form>
     </Drawer>
   );
+}
+
+/** 名冊選項：點選帶入，也可再點一次清除 */
+function Choice({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => (
+        <button type="button" key={o} onClick={() => onChange(value === o ? '' : o)} className={cx('rounded-full border px-3 py-1 text-[13px] transition', value === o ? 'border-pine bg-pine text-white' : 'border-line bg-white text-ink-2 hover:border-pine/40')}>
+          {o}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 依原名冊格式匯出 */
+export function exportRoster(sps: SP[], today: string) {
+  download(`標準化病人名冊_${today}.csv`, toCsv(
+    ['姓名', '性別', '年齡', '生日', '首次認證', 'SP年資', '學會認證', '證書字號', '身分', '級數', '證書狀態', '是否協會會員', '在職狀態', '聯絡電話', '電子郵件', '備註'],
+    sps.map((p) => [p.name, p.gender, ageOf(p.birthday, today), p.birthday, p.firstCertYear, seniorityOf(p.firstCertYear, today), p.assocCert, p.certNo, p.role, p.level, p.certStatus, p.isMember, SP_STATUS[p.status].label, p.phone, p.email, p.note]),
+  ));
 }

@@ -64,7 +64,7 @@ export function createSheetsRepo(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): 
     const def = TABLES[t] as unknown as TableDef<RowTypes[K]>;
     const vals = toRow(t, obj);
     return header.map((h) => {
-      const i = def.columns.findIndex((c) => c.label === h || c.key === h);
+      const i = def.columns.findIndex((c) => c.label === h || c.key === h || (c.alt || []).includes(h));
       return i >= 0 ? sheetSafe(vals[i]) : '';
     });
   }

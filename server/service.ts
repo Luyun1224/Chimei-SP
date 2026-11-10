@@ -250,7 +250,7 @@ export function createService({ repo, env, calendar }: Deps) {
         if (warnings.length && !confirm) throw new AppError('NEEDS_CONFIRMATION', '偵測到可能的衝突或重複，請確認', { warnings });
         const now = env.nowIso(), actor = env.user();
         const createdSps: SP[] = [...toCreate].map((name) => ({
-          spId: id('SP'), name, phone: '', email: '', lineNote: '', status: 'active', joinDate: '', certification: '', note: '',
+          spId: id('SP'), name, phone: '', email: '', lineNote: '', status: 'active', gender: '', birthday: '', firstCertYear: '', assocCert: '', certNo: '', role: 'SP', level: '', certStatus: '', isMember: '', note: '',
           createdAt: now, createdBy: actor, updatedAt: now, updatedBy: actor, version: 1,
         }));
         if (createdSps.length) {

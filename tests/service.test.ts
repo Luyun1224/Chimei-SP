@@ -346,6 +346,19 @@ describe('出席與時數核定', () => {
   });
 });
 
+describe('SP 名冊欄位', () => {
+  it('名冊欄位存取與年齡／年資計算', async () => {
+    const r = ok(svc.dispatch('sp.save', { input: { name: '黃 惠玲', gender: '女', birthday: '52/11/12', firstCertYear: '101', assocCert: '113-115', certNo: '(113)0377', role: 'SP', level: 'SP2', certStatus: '符合', isMember: '是' } }));
+    const p = r.sps![0];
+    expect(p.name).toBe('黃惠玲');
+    expect(p.birthday).toBe('52.11.12');
+    const { ageOf, seniorityOf } = await import('../shared/validate');
+    expect(ageOf(p.birthday, '2026-11-10')).toBe('63'); // 115 − 52
+    expect(seniorityOf(p.firstCertYear, '2026-11-10')).toBe('14');
+    expect(svc.dispatch('sp.save', { input: { name: 'X', birthday: '1963-11-12x' } }).ok).toBe(false);
+  });
+});
+
 describe('權限', () => {
   it('未登入與未授權帳號無法存取資料', () => {
     env.setUser('');

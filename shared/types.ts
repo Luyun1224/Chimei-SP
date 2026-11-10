@@ -12,9 +12,26 @@ export interface SP {
   phone: string;
   email: string;
   lineNote: string;
+  /** 在職狀態（系統用：在職／暫停／停用） */
   status: SpStatus;
-  joinDate: string;
-  certification: string;
+  // ---- 名冊欄位（與原紙本／Excel 名冊相同） ----
+  gender: string;
+  /** 生日，民國年格式，例如 43.08.04 */
+  birthday: string;
+  /** 首次認證年度（民國），例如 101 */
+  firstCertYear: string;
+  /** 學會認證期間，例如 113-115 */
+  assocCert: string;
+  /** 證書字號，例如 (113)0377 */
+  certNo: string;
+  /** 身分：SP／SPT */
+  role: string;
+  /** 級數：SP0–SP3 */
+  level: string;
+  /** 證書狀態：符合／尚未認證／未符合／已過效期／待展延 */
+  certStatus: string;
+  /** 是否協會會員：是／否 */
+  isMember: string;
   note: string;
   createdAt: string;
   createdBy: string;
@@ -148,8 +165,15 @@ export interface SpInput {
   email?: string;
   lineNote?: string;
   status?: SpStatus;
-  joinDate?: string;
-  certification?: string;
+  gender?: string;
+  birthday?: string;
+  firstCertYear?: string;
+  assocCert?: string;
+  certNo?: string;
+  role?: string;
+  level?: string;
+  certStatus?: string;
+  isMember?: string;
   note?: string;
 }
 

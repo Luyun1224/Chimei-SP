@@ -232,8 +232,8 @@ export function setupSpreadsheet() {
     const sh = sheetFor(def.sheet, def.legacySheet);
     const values = sh.getLastRow() ? sh.getDataRange().getValues() : [[]];
     const oldHeader = (values[0] || []).map(String);
-    const known = def.columns as readonly { key: string; label: string }[];
-    const extras = oldHeader.filter((h) => h && !known.some((c) => c.label === h || c.key === h));
+    const known = def.columns as readonly { key: string; label: string; alt?: string[] }[];
+    const extras = oldHeader.filter((h) => h && !known.some((c) => c.label === h || c.key === h || (c.alt || []).includes(h)));
     const header = [...known.map((c) => c.label), ...extras];
     const rows = values.slice(1).filter((r) => r.some((x) => x !== '' && x !== null)).map((r) => {
       const obj = fromRow(name, oldHeader, r, fmtGasDate);
