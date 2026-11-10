@@ -1136,14 +1136,28 @@ var SPHub = (() => {
     if (!email || !adminList().includes(email)) {
       const t = HtmlService.createTemplate(
         `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-      body{font-family:system-ui,"Noto Sans TC",sans-serif;background:#F7F4ED;color:#252B2D;display:grid;place-items:center;min-height:100vh;margin:0}
-      main{max-width:440px;padding:40px;background:#fff;border-radius:20px;border:1px solid #e6e1d6}
-      h1{font-size:22px;color:#284A45;margin:0 0 12px}p{line-height:1.7;color:#555}</style></head>
-      <body><main><h1>無存取權限</h1><p>帳號 <b><?= email ?></b> 未獲授權使用 SP Performance Hub。</p>
-      <p>如需使用，請聯絡臨床技能中心系統管理員將您的 Google 帳號加入管理員名單。</p></main></body></html>`
+      body{font-family:system-ui,"Noto Sans TC",sans-serif;background:#F7F4ED;color:#252B2D;display:grid;place-items:center;min-height:100vh;margin:0;padding:16px;box-sizing:border-box}
+      main{max-width:560px;padding:36px;background:#fff;border-radius:20px;border:1px solid #e6e1d6}
+      h1{font-size:22px;color:#284A45;margin:0 0 12px}p,li{line-height:1.75;color:#555;font-size:14px}ol{padding-left:20px}
+      a.btn{display:inline-block;margin-top:8px;padding:10px 18px;border-radius:999px;background:#284A45;color:#fff;text-decoration:none;font-size:14px}</style></head>
+      <body><main>
+      <? if (email) { ?>
+        <h1>無存取權限</h1><p>帳號 <b><?= email ?></b> 未獲授權使用 SP Performance Hub。</p>
+        <p>如需使用，請聯絡臨床技能中心系統管理員將您的 Google 帳號加入管理員名單（Script Properties 的 ADMIN_EMAILS）。</p>
+      <? } else { ?>
+        <h1>無法辨識您的 Google 帳號</h1>
+        <p>系統沒有收到登入身分，通常是以下原因之一：</p>
+        <ol>
+          <li><b>部署設定</b>：Apps Script「管理部署作業」中，執行身分須為「<b>存取網頁應用程式的使用者</b>」，存取權須為「<b>任何擁有 Google 帳戶的使用者</b>」（或貴院網域），不可選「任何人」。</li>
+          <li><b>從 GitHub 網址嵌入開啟時</b>：瀏覽器封鎖了第三方 Cookie（無痕視窗預設會封鎖）。請到 Chrome「設定 → 隱私權和安全性 → 第三方 Cookie → 允許使用第三方 Cookie 的網站」加入 <b>luyun1224.github.io</b>，或改用下方按鈕直接開啟。</li>
+        </ol>
+        <a class="btn" href="<?= url ?>" target="_blank" rel="noopener">在新分頁直接開啟系統</a>
+      <? } ?>
+      </main></body></html>`
       );
-      t.email = email || "（無法取得，請確認已登入 Google 帳號）";
-      return t.evaluate().setTitle("SP Performance Hub｜無存取權限");
+      t.email = email;
+      t.url = ScriptApp.getService().getUrl();
+      return t.evaluate().setTitle("SP Performance Hub｜無存取權限").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
     return HtmlService.createHtmlOutput(appShell()).setTitle("SP Performance Hub｜標準化病人演出歷程管理平台").addMetaTag("viewport", "width=device-width, initial-scale=1").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
