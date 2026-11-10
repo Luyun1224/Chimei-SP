@@ -1,4 +1,5 @@
 import type { ActionName, ApiActions, ApiError, ApiResponse } from '../../shared/types';
+import { isRemote, remoteCall } from './remote';
 
 declare global {
   interface Window {
@@ -38,6 +39,8 @@ export async function call<A extends ActionName>(action: A, payload: ApiActions[
   let res: ApiResponse<ApiActions[A]['res']>;
   if (isGas()) {
     res = JSON.parse(await gasCall(action, payload));
+  } else if (isRemote()) {
+    res = JSON.parse(await remoteCall(action, payload));
   } else {
     const { demoCall } = await import('./demo');
     res = await demoCall(action, payload);

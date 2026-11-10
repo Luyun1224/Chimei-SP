@@ -1,7 +1,8 @@
-import { Component, useEffect, type ReactNode } from 'react';
+import { Component, useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { Lock, RefreshCw } from 'lucide-react';
 import { DataProvider, useData } from './lib/store';
+import { isRemote, preloadSignIn, signIn, signOut } from './lib/remote';
 import { useRoute } from './lib/router';
 import { ConfirmProvider, ToastProvider } from './components/overlay';
 import { Layout } from './components/Layout';
@@ -22,6 +23,7 @@ function Pages() {
   const { snap, loading, error, reload } = useData();
   useEffect(() => { window.scrollTo({ top: 0 }); }, [route.path]);
 
+  if (error && error.code === 'UNAUTHENTICATED' && isRemote()) return <LoginScreen onDone={reload} />;
   if (error && (error.code === 'FORBIDDEN' || error.code === 'UNAUTHENTICATED')) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
@@ -29,6 +31,7 @@ function Pages() {
           <Lock className="mx-auto size-8 text-pine" />
           <h1 className="display mt-3 text-[24px] font-semibold text-pine">無存取權限</h1>
           <p className="mt-2 text-[14px] text-ink-2">{error.message}</p>
+          {isRemote() && <Button className="mt-4" onClick={() => { signOut(); reload(); }}>改用其他 Google 帳號登入</Button>}
         </div>
       </div>
     );
@@ -75,6 +78,42 @@ function Pages() {
         </>
       )}
     </Layout>
+  );
+}
+
+function LoginScreen({ onDone }: { onDone: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => preloadSignIn(), []);
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-cream p-6">
+      <div className="w-full max-w-md overflow-hidden rounded-[28px] bg-pine p-8 text-white shadow-lift">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-gold">Chi Mei · Clinical Skills</div>
+        <h1 className="display mt-3 text-[30px] font-semibold leading-tight">SP Performance Hub</h1>
+        <p className="mt-1 text-[14px] text-white/70">標準化病人演出歷程管理平台</p>
+        <p className="mt-6 text-[14px] leading-relaxed text-white/80">請以已授權的管理員 Google 帳號登入。第一次登入時，Google 會詢問是否允許本系統存取試算表與日曆。</p>
+        <Button
+          variant="gold"
+          className="mt-6 w-full"
+          loading={busy}
+          onClick={async () => {
+            setBusy(true);
+            setErr('');
+            try {
+              await signIn(true);
+              await onDone();
+            } catch (e) {
+              setErr((e as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          以 Google 帳號登入
+        </Button>
+        {err && <p role="alert" className="mt-3 rounded-[12px] bg-white/10 px-3 py-2 text-[13px] text-[#f6c7bf]">{err}</p>}
+      </div>
+    </div>
   );
 }
 

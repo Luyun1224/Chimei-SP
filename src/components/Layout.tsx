@@ -5,6 +5,7 @@ import { navigate, type Route } from '../lib/router';
 import { useData } from '../lib/store';
 import { cx } from './ui';
 import { WEB_APP_URL } from '../config';
+import { isRemote, signOut } from '../lib/remote';
 import { API_VERSION } from '../../shared/version';
 
 export const NAV = [
@@ -69,6 +70,7 @@ export function Layout({ route, children }: { route: Route; children: ReactNode 
         </div>
         <div className="space-y-1 px-3 text-[12px] text-white/50">
           {snap && <div className="truncate" title={snap.user.email}>👤 {snap.user.email}</div>}
+          {isRemote() && <button className="underline underline-offset-2 hover:text-white" onClick={() => { signOut(); window.location.reload(); }}>登出</button>}
           <div>時區 Asia/Taipei</div>
         </div>
       </aside>

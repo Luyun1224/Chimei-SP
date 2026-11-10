@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ActionName, ApiActions, Assignment, MutationResult, NotificationEntry, SP, Session, Snapshot } from '../../shared/types';
 import { latestNotifications } from '../../shared/template';
 import { ApiCallError, call } from './api';
+import { rememberLogin } from './remote';
 
 interface Derived {
   spMap: Map<string, SP>;
@@ -49,7 +50,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      setSnap(await call('bootstrap', {}));
+      const data = await call('bootstrap', {});
+      setSnap(data);
+      rememberLogin(data.user.email);
       notifyEntry('ready');
     } catch (e) {
       const err = e instanceof ApiCallError ? e : new ApiCallError({ code: 'INTERNAL', message: String(e) });
@@ -86,7 +89,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
       return res;
     } catch (e) {
-      if (e instanceof ApiCallError && e.code === 'VERSION_CONFLICT') reload();
+      if (e instanceof ApiCallError && (e.code === 'VERSION_CONFLICT' || e.code === 'UNAUTHENTICATED')) reload();
       throw e;
     } finally {
       inflight.current.delete(key);

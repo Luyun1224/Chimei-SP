@@ -17,12 +17,34 @@
 </head>
 <body>
   <div id="loading">SP Performance Hub 載入中…</div>
+  <script src="./config.js"></script>
+  <script>
+    // 已設定 Client ID / Script ID → 「網址直開」模式：前端直接在本頁執行，手機也能用本網址登入
+    (function () {
+      var c = window.SP_HUB_REMOTE || {};
+      if (!c.clientId || !c.scriptId) return;
+      window.SP_HUB_DIRECT = true;
+      var css = document.createElement('link'); css.rel = 'stylesheet'; css.href = './app/app.css'; document.head.appendChild(css);
+      var f = document.createElement('link'); f.rel = 'stylesheet';
+      f.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@600;700&display=swap';
+      document.head.appendChild(f);
+      document.write('<div id="root"></div><script src="./app/app.js"><\/script>');
+    })();
+  </script>
   <!-- 正式系統（Google Apps Script）。讀寫 Google Sheets 與權限檢查仍由 Apps Script 以管理員本人的 Google 身分處理 -->
-  <iframe id="app" title="SP Performance Hub" allow="clipboard-write" src="https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec"></iframe>
-  <a id="direct" target="_top" rel="noopener" title="畫面空白或無法登入時，直接開啟系統" href="https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec">↗ 直接開啟</a>
+  <script>
+    // 未設定網址直開時：沿用嵌入 Apps Script 的方式
+    if (!window.SP_HUB_DIRECT) document.write('<iframe id="app" title="SP Performance Hub" allow="clipboard-write" src="https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec"></iframe>');
+  </script>
+  <a id="direct" style="display:none" target="_top" rel="noopener" title="畫面空白或無法登入時，直接開啟系統" href="https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec">↗ 直接開啟</a>
   <script>
     // 手機（iPhone Safari、LINE 等內建瀏覽器）會封鎖嵌入頁的 Google 登入資訊（第三方 Cookie）。
     // 系統載入後會回報狀態：無法辨識帳號或逾時未回應時，自動改為直接開啟 Apps Script 網址。
+    if (window.SP_HUB_DIRECT) {
+      document.getElementById('loading').remove();
+    } else {
+      document.getElementById('direct').style.display = '';
+    }
     var APP = 'https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec';
     var done = false;
     function go() { if (!done) { done = true; document.getElementById('loading').textContent = '正在改為直接開啟系統…'; window.location.replace(APP); } }
@@ -34,7 +56,7 @@
         var l = document.getElementById('loading'); if (l) l.remove();
       } else if (d.type === 'auth-failed') go();
     });
-    setTimeout(function () { if (!done) go(); }, 12000);
+    if (!window.SP_HUB_DIRECT) setTimeout(function () { if (!done) go(); }, 12000);
   </script>
 </body>
 </html>
