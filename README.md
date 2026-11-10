@@ -9,6 +9,8 @@
 
 > **正式系統網址**：<https://script.google.com/macros/s/AKfycbwVaaFH9s-UcBP6_WWGASIwsAWWa76lkgqUbkUVItl5dgFTIYZMf9B0oBzPmtkrdR8I/exec>（限授權管理員以 Google 帳號登入）
 >
+> **GitHub Pages 入口**：<https://luyun1224.github.io/Chimei-SP/>（「進入系統」連到上方正式網址；另有 [示範版](https://luyun1224.github.io/Chimei-SP/demo/)，使用虛構資料、不連線 Google）
+>
 > 部署步驟請見 **[docs/DEPLOY.md](docs/DEPLOY.md)**。
 
 ## 功能模組
