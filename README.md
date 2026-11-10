@@ -7,7 +7,7 @@
 - **LINE 手動提醒輔助**：產生文案、一鍵複製、人工標記通知狀態（**不會**自動發送）
 - **年度成果儀表板**：只採計已完成且已核定的紀錄，並嚴格區分場次／人次／人時／SP 人數
 
-> **正式系統網址**：<https://script.google.com/macros/s/AKfycbwVaaFH9s-UcBP6_WWGASIwsAWWa76lkgqUbkUVItl5dgFTIYZMf9B0oBzPmtkrdR8I/exec>（限授權管理員以 Google 帳號登入）
+> **正式系統網址**：<https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec>（限授權管理員以 Google 帳號登入）
 >
 > **GitHub Pages 入口**：<https://luyun1224.github.io/Chimei-SP/>（「進入系統」連到上方正式網址；另有 [示範版](https://luyun1224.github.io/Chimei-SP/demo/)，使用虛構資料、不連線 Google）
 >
