@@ -7,9 +7,6 @@
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/userinfo.email"
   ],
-  "executionApi": {
-    "access": "ANYONE"
-  },
   "webapp": {
     "executeAs": "USER_ACCESSING",
     "access": "DOMAIN"

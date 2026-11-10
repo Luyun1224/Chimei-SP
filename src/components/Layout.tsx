@@ -70,7 +70,7 @@ export function Layout({ route, children }: { route: Route; children: ReactNode 
         </div>
         <div className="space-y-1 px-3 text-[12px] text-white/50">
           {snap && <div className="truncate" title={snap.user.email}>👤 {snap.user.email}</div>}
-          {isRemote() && <button className="underline underline-offset-2 hover:text-white" onClick={() => { signOut(); window.location.reload(); }}>登出</button>}
+          {isRemote() && <button className="underline underline-offset-2 hover:text-white" onClick={() => { signOut(); window.location.hash = '#/overview'; window.location.reload(); }}>登出</button>}
           <div>時區 Asia/Taipei</div>
         </div>
       </aside>

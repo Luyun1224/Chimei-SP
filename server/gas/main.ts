@@ -47,9 +47,9 @@ function openSpreadsheet() {
   return SpreadsheetApp.openById(id);
 }
 
-function buildEnv(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): Env {
+function buildEnv(ss: GoogleAppsScript.Spreadsheet.Spreadsheet, asUser?: string): Env {
   return {
-    user: currentEmail,
+    user: () => (asUser !== undefined ? asUser : currentEmail()),
     isAdmin: (email) => adminList().includes(email.toLowerCase()),
     nowIso: () => fmtGasDate(new Date(), 'datetime'),
     today: () => Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'),
@@ -135,7 +135,8 @@ function appShell(): string {
 </body></html>`;
 }
 
-export function doGet() {
+export function doGet(e?: GoogleAppsScript.Events.DoGet) {
+  if (e?.parameter?.login) return loginPage(String(e.parameter.return || ''));
   const email = currentEmail();
   if (!email || !adminList().includes(email)) {
     const t = HtmlService.createTemplate(
@@ -284,4 +285,110 @@ export function healthCheck() {
   const r = buildEnv(ss).health!();
   Logger.log(JSON.stringify(r, null, 2));
   return r;
+}
+
+// ---------------- GitHub 網址直開：登入權杖 ----------------
+//
+// 手機瀏覽器會封鎖嵌入頁的 Google 登入資訊，因此 GitHub 網址改用「權杖」：
+// 1) 使用者在 GitHub 頁按「以 Google 帳號登入」→ 開啟本網頁應用程式（以使用者本人身分、頂層頁面，手機可用）
+// 2) 確認是 ADMIN_EMAILS 內的管理員後，簽發有效 7 天的 HMAC 權杖，帶回 GitHub 頁（URL #fragment，不經任何伺服器）
+// 3) GitHub 頁以權杖呼叫「資料 API」部署（doPost），每次都在伺服器端驗證簽章、期限與管理員名單
+// 權杖密鑰自動產生並只存在 Script Properties；更換密鑰即可讓所有權杖失效。
+
+const TOKEN_DAYS = 7;
+const ALLOWED_RETURN = [/^https:\/\/luyun1224\.github\.io\/Chimei-SP\//, /^http:\/\/(localhost|127\.0\.0\.1)(:\d{2,5})?\//];
+
+function tokenSecret(): string {
+  const p = props();
+  let k = p.getProperty('TOKEN_SECRET');
+  if (!k) {
+    k = Utilities.getUuid() + Utilities.getUuid();
+    p.setProperty('TOKEN_SECRET', k);
+  }
+  return k;
+}
+function sign(data: string): string {
+  return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(data, tokenSecret())).replace(/=+$/, '');
+}
+function issueToken(email: string): string {
+  const body = Utilities.base64EncodeWebSafe(JSON.stringify({ e: email, x: Date.now() + TOKEN_DAYS * 86400000 }), Utilities.Charset.UTF_8).replace(/=+$/, '');
+  return `${body}.${sign(body)}`;
+}
+function verifyToken(token: string): string | null {
+  const [body, sig] = String(token || '').split('.');
+  if (!body || !sig || sign(body) !== sig) return null;
+  try {
+    const pad = body + '='.repeat((4 - (body.length % 4)) % 4);
+    const data = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(pad)).getDataAsString('UTF-8')) as { e: string; x: number };
+    if (!data.e || !data.x || data.x < Date.now()) return null;
+    return String(data.e).toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function loginPage(returnUrl: string) {
+  const email = currentEmail();
+  // 只取白名單網址的「固定前綴」，避免把外部內容帶入頁面或把權杖送到其他網站
+  const base = ALLOWED_RETURN.map((re) => re.exec(returnUrl)?.[0]).find(Boolean) || '';
+  const okReturn = !!base;
+  const apiUrl = props().getProperty('API_URL') || '';
+  const t = HtmlService.createTemplate(
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+    body{font-family:system-ui,"Noto Sans TC",sans-serif;background:#F7F4ED;color:#252B2D;display:grid;place-items:center;min-height:100vh;margin:0;padding:16px;box-sizing:border-box}
+    main{max-width:480px;width:100%;padding:32px;background:#284A45;color:#fff;border-radius:24px}
+    h1{font-size:22px;margin:0 0 10px}p{line-height:1.7;color:rgba(255,255,255,.8);font-size:14px}
+    a.btn{display:block;text-align:center;margin-top:18px;padding:14px 18px;border-radius:999px;background:#C6A77A;color:#252B2D;text-decoration:none;font-weight:600;font-size:16px}
+    .err{background:#fff;color:#252B2D}</style></head><body>
+    <? if (!okReturn) { ?><main class="err"><h1>無效的返回網址</h1></main>
+    <? } else if (!email) { ?><main class="err"><h1>無法辨識 Google 帳號</h1><p style="color:#555">請確認此網頁應用程式的執行身分為「存取網頁應用程式的使用者」，且已登入 Google。</p></main>
+    <? } else if (!isAdmin) { ?><main class="err"><h1>無存取權限</h1><p style="color:#555">帳號 <b><?= email ?></b> 未獲授權使用 SP Performance Hub。</p></main>
+    <? } else if (!apiUrl) { ?><main class="err"><h1>尚未設定資料 API</h1><p style="color:#555">請在 Apps Script「專案設定 → 指令碼屬性」新增 <b>API_URL</b>，值為「以我的身分執行／任何人」部署的網頁應用程式網址。</p></main>
+    <? } else { ?>
+      <main><div style="font-size:11px;letter-spacing:.2em;color:#C6A77A;font-weight:600">SP PERFORMANCE HUB</div>
+      <h1 style="margin-top:8px">登入成功</h1><p><?= email ?></p>
+      <a class="btn" id="back" target="_top" href="<?= back ?>">返回系統</a></main>
+      <script>try { window.top.location.replace(<?!= backJson ?>); } catch (e) {}</script>
+    <? } ?></body></html>`,
+  );
+  const isAdmin = !!email && adminList().includes(email);
+  t.email = email;
+  t.okReturn = okReturn;
+  t.isAdmin = isAdmin;
+  t.apiUrl = apiUrl;
+  t.back = okReturn && isAdmin && apiUrl
+    ? `${base}#sphub_token=${encodeURIComponent(issueToken(email))}&sphub_api=${encodeURIComponent(apiUrl)}&sphub_email=${encodeURIComponent(email)}`
+    : '';
+  t.backJson = JSON.stringify(t.back).replace(/</g, '\\u003c');
+  return t.evaluate().setTitle('SP Performance Hub｜登入').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * 資料 API（請另外部署一個「執行身分：我／存取權：任何人」的網頁應用程式，網址存入 Script Properties 的 API_URL）。
+ * 不依賴 Cookie；每次呼叫都驗證權杖與管理員名單，未通過一律拒絕。
+ */
+export function doPost(e: GoogleAppsScript.Events.DoPost) {
+  const out = (o: unknown) => ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+  let req: { token?: string; action?: string; payload?: string } = {};
+  try {
+    req = JSON.parse(e?.postData?.contents || '{}');
+  } catch {
+    return out({ ok: false, error: { code: 'VALIDATION', message: '請求格式錯誤' } });
+  }
+  const email = verifyToken(req.token || '');
+  if (!email) return out({ ok: false, error: { code: 'UNAUTHENTICATED', message: '登入已過期，請重新登入' } });
+  if (!adminList().includes(email)) return out({ ok: false, error: { code: 'FORBIDDEN', message: `帳號 ${email} 未獲授權` } });
+  try {
+    const ss = openSpreadsheet();
+    const svc = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss, email), calendar: gasCalendar });
+    let payload: unknown = {};
+    try {
+      payload = req.payload ? JSON.parse(req.payload) : {};
+    } catch {
+      return out({ ok: false, error: { code: 'VALIDATION', message: '請求格式錯誤' } });
+    }
+    return out(svc.dispatch(String(req.action) as ActionName, payload as never));
+  } catch (err) {
+    return out({ ok: false, error: { code: 'NOT_CONFIGURED', message: String((err as Error).message || err) } });
+  }
 }

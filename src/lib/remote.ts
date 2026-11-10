@@ -1,160 +1,95 @@
 /**
- * 「網址直開」模式：前端直接在 GitHub Pages（頂層頁面）執行，不再用 iframe 嵌入 Apps Script。
- * 以 Google Identity Services 取得使用者本人的 OAuth 存取權杖（瀏覽器端，不需要 Client Secret），
- * 再透過 Apps Script API（scripts.run）以「使用者本人身分」執行後端的 api() 函式。
- * 因為是頂層頁面登入，手機 Safari／LINE 內建瀏覽器封鎖第三方 Cookie 也不受影響。
+ * 「網址直開」模式：系統直接在 GitHub 網址（頂層頁面）執行，手機也能用。
  *
- * 設定：pages/config.js → window.SP_HUB_REMOTE = { clientId, scriptId }（皆為公開識別碼，不是密鑰）。
+ * 登入：導向 Apps Script 網頁應用程式（以使用者本人身分、頂層頁面）→ 確認為管理員後簽發 7 天權杖
+ *       → 帶回本頁網址的 #fragment（不經任何伺服器）→ 存在本機。
+ * 資料：以權杖呼叫 Apps Script「資料 API」部署（doPost）；伺服器每次都驗證簽章、期限與管理員名單。
+ * 全程不需要 Google Cloud 設定、Client ID 或任何密鑰。
  */
 import { ApiCallError } from './api';
-
-interface RemoteConfig {
-  clientId: string;
-  scriptId: string;
-}
-
-interface TokenResponse {
-  access_token?: string;
-  expires_in?: number;
-  error?: string;
-  error_description?: string;
-}
-
-interface Gis {
-  accounts: {
-    oauth2: {
-      initTokenClient(cfg: {
-        client_id: string;
-        scope: string;
-        prompt?: string;
-        callback: (r: TokenResponse) => void;
-        error_callback?: (e: { type: string; message?: string }) => void;
-      }): { requestAccessToken(o?: { prompt?: string; hint?: string }): void };
-      revoke(token: string, done?: () => void): void;
-    };
-  };
-}
+import { WEB_APP_URL } from '../config';
 
 declare global {
   interface Window {
-    SP_HUB_REMOTE?: Partial<RemoteConfig>;
+    /** GitHub 入口頁設定：本頁即為正式系統 */
+    SP_HUB_DIRECT?: boolean;
   }
 }
 
-/** 後端 Code.gs 實際使用的權限範圍；scripts.run 要求權杖包含全部範圍 */
-const SCOPES = [
-  'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/calendar',
-  'https://www.googleapis.com/auth/userinfo.email',
-  'openid',
-].join(' ');
-
-const TOKEN_KEY = 'sp-hub-token';
-const HINT_KEY = 'sp-hub-login-hint';
-
-export function remoteConfig(): RemoteConfig | null {
-  const c = typeof window !== 'undefined' ? window.SP_HUB_REMOTE : undefined;
-  return c?.clientId && c?.scriptId ? { clientId: c.clientId, scriptId: c.scriptId } : null;
+const KEY = 'sp-hub-session-v1';
+interface Sess {
+  token: string;
+  api: string;
+  email: string;
 }
-export const isRemote = () => !!remoteConfig();
 
-let token: { value: string; exp: number } | null = (() => {
+/** 從登入後帶回的網址 #fragment 取出權杖並清除網址 */
+function captureFromHash(): void {
+  if (typeof window === 'undefined' || !window.location.hash.includes('sphub_token=')) return;
+  const q = new URLSearchParams(window.location.hash.slice(1));
+  const token = q.get('sphub_token') || '';
+  const api = q.get('sphub_api') || '';
+  const email = q.get('sphub_email') || '';
+  if (token && /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(api)) {
+    localStorage.setItem(KEY, JSON.stringify({ token, api, email } satisfies Sess));
+  }
+  history.replaceState(null, '', window.location.pathname + window.location.search + '#/overview');
+}
+captureFromHash();
+
+function session(): Sess | null {
   try {
-    const t = JSON.parse(sessionStorage.getItem(TOKEN_KEY) || 'null');
-    return t && t.exp > Date.now() + 60_000 ? t : null;
+    const s = JSON.parse(localStorage.getItem(KEY) || 'null') as Sess | null;
+    if (!s?.token || !s.api) return null;
+    // 權杖內含到期時間；過期就視為未登入（伺服器仍會再次驗證）
+    const body = s.token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+    const data = JSON.parse(decodeURIComponent(escape(atob(body + '='.repeat((4 - (body.length % 4)) % 4))))) as { x: number };
+    return data.x > Date.now() + 60_000 ? s : null;
   } catch {
     return null;
   }
-})();
-
-export const hasToken = () => !!token && token.exp > Date.now() + 60_000;
-
-let gisPromise: Promise<Gis> | null = null;
-function loadGis(): Promise<Gis> {
-  const w = window as unknown as { google?: Gis };
-  if (w.google?.accounts?.oauth2) return Promise.resolve(w.google);
-  gisPromise ||= new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://accounts.google.com/gsi/client';
-    s.async = true;
-    s.onload = () => resolve((window as unknown as { google: Gis }).google);
-    s.onerror = () => reject(new Error('無法載入 Google 登入元件，請確認網路連線'));
-    document.head.append(s);
-  });
-  return gisPromise;
 }
 
-/** 預先載入登入元件（讓按下登入時能立即開啟視窗，避免手機擋彈出視窗） */
-export function preloadSignIn() {
-  if (isRemote()) loadGis().catch(() => {});
-}
+export const isRemote = () => typeof window !== 'undefined' && !!window.SP_HUB_DIRECT && !window.google?.script?.run;
+export const hasToken = () => !!session();
+export const signedInEmail = () => session()?.email || '';
+export function preloadSignIn() {}
 
-/** 取得權杖：interactive=true 時會開啟 Google 登入／授權視窗（必須在使用者點擊時呼叫） */
-export function signIn(interactive = true): Promise<void> {
-  const cfg = remoteConfig();
-  if (!cfg) return Promise.reject(new Error('尚未設定 Client ID / Script ID'));
-  return loadGis().then(
-    (gis) =>
-      new Promise<void>((resolve, reject) => {
-        const client = gis.accounts.oauth2.initTokenClient({
-          client_id: cfg.clientId,
-          scope: SCOPES,
-          callback: (r) => {
-            if (r.error || !r.access_token) return reject(new Error(r.error_description || r.error || '登入失敗'));
-            token = { value: r.access_token, exp: Date.now() + (r.expires_in || 3600) * 1000 };
-            sessionStorage.setItem(TOKEN_KEY, JSON.stringify(token));
-            resolve();
-          },
-          error_callback: (e) => reject(new Error(e.type === 'popup_closed' ? '已關閉登入視窗' : e.message || e.type)),
-        });
-        client.requestAccessToken({ prompt: interactive ? '' : 'none', hint: localStorage.getItem(HINT_KEY) || undefined });
-      }),
-  );
+/** 前往 Google 登入（頂層頁面導向，手機也可用） */
+export function signIn(): Promise<void> {
+  const back = window.location.origin + window.location.pathname;
+  window.location.assign(`${WEB_APP_URL}?login=1&return=${encodeURIComponent(back)}`);
+  return new Promise(() => {});
 }
 
 export function signOut() {
-  const t = token?.value;
-  token = null;
-  sessionStorage.removeItem(TOKEN_KEY);
-  if (t) loadGis().then((g) => g.accounts.oauth2.revoke(t)).catch(() => {});
+  localStorage.removeItem(KEY);
 }
 
-export function rememberLogin(email: string) {
-  if (email) localStorage.setItem(HINT_KEY, email);
+export function rememberLogin(_email: string) {
+  void _email;
 }
 
-interface RunResponse {
-  done?: boolean;
-  response?: { result?: unknown };
-  error?: { code?: number; message?: string; details?: { errorMessage?: string; errorType?: string }[] };
-}
-
-/** 以 Apps Script API 執行後端 api(action, payloadJson)，回傳 JSON 字串 */
+/** 以權杖呼叫資料 API，回傳 JSON 字串 */
 export async function remoteCall(action: string, payload: unknown): Promise<string> {
-  const cfg = remoteConfig()!;
-  if (!hasToken()) throw new ApiCallError({ code: 'UNAUTHENTICATED', message: '請先以 Google 帳號登入' });
+  const s = session();
+  if (!s) throw new ApiCallError({ code: 'UNAUTHENTICATED', message: '請先以 Google 帳號登入' });
   let res: Response;
   try {
-    res = await fetch(`https://script.googleapis.com/v1/scripts/${encodeURIComponent(cfg.scriptId)}:run`, {
+    // text/plain 為「簡單請求」，不觸發 CORS 預檢；Apps Script 回應允許跨網域讀取
+    res = await fetch(s.api, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token!.value}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ function: 'api', parameters: [action, JSON.stringify(payload ?? {})], devMode: false }),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ token: s.token, action, payload: JSON.stringify(payload ?? {}) }),
+      redirect: 'follow',
     });
   } catch {
-    throw new ApiCallError({ code: 'INTERNAL', message: '無法連線 Google，請確認網路後重試' });
+    throw new ApiCallError({ code: 'INTERNAL', message: '無法連線系統，請確認網路後重試' });
   }
-  if (res.status === 401) {
-    signOut();
-    throw new ApiCallError({ code: 'UNAUTHENTICATED', message: '登入已過期，請重新登入' });
+  const text = await res.text();
+  if (!text.trim().startsWith('{')) {
+    throw new ApiCallError({ code: 'NOT_CONFIGURED', message: '資料 API 回應異常：請確認 API_URL 部署的「執行身分」為「我」、存取權為「任何人」' });
   }
-  const body = (await res.json().catch(() => ({}))) as RunResponse;
-  if (res.status === 403) {
-    throw new ApiCallError({ code: 'FORBIDDEN', message: 'Google 拒絕執行：' + (body.error?.message || '請確認 Apps Script API 已啟用且已部署為「API 可執行檔」') });
-  }
-  if (!res.ok) throw new ApiCallError({ code: 'INTERNAL', message: `Google API 錯誤（${res.status}）：${body.error?.message || ''}` });
-  if (body.error) {
-    const msg = body.error.details?.[0]?.errorMessage || body.error.message || '後端執行錯誤';
-    throw new ApiCallError({ code: 'INTERNAL', message: '後端執行錯誤：' + msg });
-  }
-  return String(body.response?.result ?? '');
+  if (/"code"\s*:\s*"UNAUTHENTICATED"/.test(text)) signOut();
+  return text;
 }

@@ -11,8 +11,6 @@
 >
 > **GitHub Pages 入口**：<https://luyun1224.github.io/Chimei-SP/>（「進入系統」連到上方正式網址；另有 [示範版](https://luyun1224.github.io/Chimei-SP/demo/)，使用虛構資料、不連線 Google）
 >
-> 手機也要用 GitHub 網址登入：請依 **[docs/MOBILE-DIRECT.md](docs/MOBILE-DIRECT.md)** 完成一次性設定。
->
 > 部署步驟請見 **[docs/DEPLOY.md](docs/DEPLOY.md)**。
 
 ## 功能模組

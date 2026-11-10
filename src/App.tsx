@@ -91,7 +91,7 @@ function LoginScreen({ onDone }: { onDone: () => Promise<void> }) {
         <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-gold">Chi Mei · Clinical Skills</div>
         <h1 className="display mt-3 text-[30px] font-semibold leading-tight">SP Performance Hub</h1>
         <p className="mt-1 text-[14px] text-white/70">標準化病人演出歷程管理平台</p>
-        <p className="mt-6 text-[14px] leading-relaxed text-white/80">請以已授權的管理員 Google 帳號登入。第一次登入時，Google 會詢問是否允許本系統存取試算表與日曆。</p>
+        <p className="mt-6 text-[14px] leading-relaxed text-white/80">請以已授權的管理員 Google 帳號登入。登入後 7 天內不需重新登入；手機、平板、電腦皆可使用。</p>
         <Button
           variant="gold"
           className="mt-6 w-full"
@@ -100,7 +100,7 @@ function LoginScreen({ onDone }: { onDone: () => Promise<void> }) {
             setBusy(true);
             setErr('');
             try {
-              await signIn(true);
+              await signIn();
               await onDone();
             } catch (e) {
               setErr((e as Error).message);
