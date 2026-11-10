@@ -1145,7 +1145,7 @@ var SPHub = (() => {
       t.email = email || "（無法取得，請確認已登入 Google 帳號）";
       return t.evaluate().setTitle("SP Performance Hub｜無存取權限");
     }
-    return HtmlService.createHtmlOutput(appShell()).setTitle("SP Performance Hub｜標準化病人演出歷程管理平台").addMetaTag("viewport", "width=device-width, initial-scale=1").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+    return HtmlService.createHtmlOutput(appShell()).setTitle("SP Performance Hub｜標準化病人演出歷程管理平台").addMetaTag("viewport", "width=device-width, initial-scale=1").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
   function api(action, payloadJson) {
     let payload = {};

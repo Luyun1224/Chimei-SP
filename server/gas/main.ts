@@ -137,7 +137,9 @@ export function doGet() {
   return HtmlService.createHtmlOutput(appShell())
     .setTitle('SP Performance Hub｜標準化病人演出歷程管理平台')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+    // 使用者要求：允許嵌入 GitHub Pages 入口（https://luyun1224.github.io/Chimei-SP/）。
+    // 前端另以 location.ancestorOrigins 檢查，非允許來源的外層頁面一律拒絕顯示（降低點擊劫持風險）。
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 /** google.script.run 唯一入口；以 JSON 字串往返，避免 Date 等型別序列化差異 */
