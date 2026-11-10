@@ -81,37 +81,37 @@ function Pages() {
   );
 }
 
+/** 未登入時自動前往 Google 登入（已登入 Google 的瀏覽器不需輸入任何資料，會自動帶回系統） */
 function LoginScreen({ onDone }: { onDone: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  useEffect(() => preloadSignIn(), []);
+  const [manual, setManual] = useState(false);
+  useEffect(() => {
+    void onDone;
+    // 避免來回重導：同一分頁 30 秒內只自動嘗試一次，失敗時改顯示按鈕
+    const last = Number(sessionStorage.getItem('sp-hub-auto-login') || 0);
+    if (Date.now() - last < 30_000) return setManual(true);
+    sessionStorage.setItem('sp-hub-auto-login', String(Date.now()));
+    preloadSignIn();
+    void signIn();
+  }, [onDone]);
   return (
     <div className="flex min-h-screen items-center justify-center bg-cream p-6">
       <div className="w-full max-w-md overflow-hidden rounded-[28px] bg-pine p-8 text-white shadow-lift">
         <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-gold">Chi Mei · Clinical Skills</div>
         <h1 className="display mt-3 text-[30px] font-semibold leading-tight">SP Performance Hub</h1>
         <p className="mt-1 text-[14px] text-white/70">標準化病人演出歷程管理平台</p>
-        <p className="mt-6 text-[14px] leading-relaxed text-white/80">請以已授權的管理員 Google 帳號登入。登入後 7 天內不需重新登入；手機、平板、電腦皆可使用。</p>
-        <Button
-          variant="gold"
-          className="mt-6 w-full"
-          loading={busy}
-          onClick={async () => {
-            setBusy(true);
-            setErr('');
-            try {
-              await signIn();
-              await onDone();
-            } catch (e) {
-              setErr((e as Error).message);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          以 Google 帳號登入
-        </Button>
-        {err && <p role="alert" className="mt-3 rounded-[12px] bg-white/10 px-3 py-2 text-[13px] text-[#f6c7bf]">{err}</p>}
+        {manual ? (
+          <>
+            <p className="mt-6 text-[14px] leading-relaxed text-white/80">請以已授權的管理員 Google 帳號登入。登入後 90 天內使用不需再登入。</p>
+            <Button variant="gold" className="mt-6 w-full" onClick={() => { sessionStorage.removeItem('sp-hub-auto-login'); void signIn(); }}>
+              以 Google 帳號登入
+            </Button>
+          </>
+        ) : (
+          <p className="mt-6 flex items-center gap-2 text-[14px] text-white/80">
+            <span className="inline-block size-4 animate-spin rounded-full border-2 border-white/30 border-t-gold" />
+            正在以 Google 帳號登入…
+          </p>
+        )}
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 /**
  * 「網址直開」模式：系統直接在 GitHub 網址（頂層頁面）執行，手機也能用。
  *
- * 登入：導向 Apps Script 網頁應用程式（以使用者本人身分、頂層頁面）→ 確認為管理員後簽發 7 天權杖
+ * 登入：導向 Apps Script 網頁應用程式（以使用者本人身分、頂層頁面）→ 確認為管理員後簽發 90 天權杖（使用中自動續期）
  *       → 帶回本頁網址的 #fragment（不經任何伺服器）→ 存在本機。
  * 資料：以權杖呼叫 Apps Script「資料 API」部署（doPost）；伺服器每次都驗證簽章、期限與管理員名單。
  * 全程不需要 Google Cloud 設定、Client ID 或任何密鑰。
@@ -91,5 +91,8 @@ export async function remoteCall(action: string, payload: unknown): Promise<stri
     throw new ApiCallError({ code: 'NOT_CONFIGURED', message: '資料 API 回應異常：請確認 API_URL 部署的「執行身分」為「我」、存取權為「任何人」' });
   }
   if (/"code"\s*:\s*"UNAUTHENTICATED"/.test(text)) signOut();
+  // 伺服器換發的新權杖（自動續期）
+  const renew = /"renewToken"\s*:\s*"([\w.-]+)"/.exec(text)?.[1];
+  if (renew) localStorage.setItem(KEY, JSON.stringify({ ...s, token: renew }));
   return text;
 }

@@ -1565,7 +1565,8 @@ var SPHub = (() => {
     Logger.log(JSON.stringify(r, null, 2));
     return r;
   }
-  var TOKEN_DAYS = 7;
+  var TOKEN_DAYS = 90;
+  var RENEW_BELOW_DAYS = 60;
   var ALLOWED_RETURN = [/^https:\/\/luyun1224\.github\.io\/Chimei-SP\//, /^http:\/\/(localhost|127\.0\.0\.1)(:\d{2,5})?\//];
   function tokenSecret() {
     const p = props();
@@ -1582,6 +1583,15 @@ var SPHub = (() => {
   function issueToken(email) {
     const body = Utilities.base64EncodeWebSafe(JSON.stringify({ e: email, x: Date.now() + TOKEN_DAYS * 864e5 }), Utilities.Charset.UTF_8).replace(/=+$/, "");
     return `${body}.${sign(body)}`;
+  }
+  function tokenExpiry(token) {
+    try {
+      const body = String(token).split(".")[0];
+      const pad = body + "=".repeat((4 - body.length % 4) % 4);
+      return Number(JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(pad)).getDataAsString("UTF-8")).x) || 0;
+    } catch {
+      return 0;
+    }
   }
   function verifyToken(token) {
     const [body, sig] = String(token || "").split(".");
@@ -1642,6 +1652,15 @@ var SPHub = (() => {
     const email = verifyToken(req.token || "");
     if (!email) return out({ ok: false, error: { code: "UNAUTHENTICATED", message: "登入已過期，請重新登入" } });
     if (!adminList().includes(email)) return out({ ok: false, error: { code: "FORBIDDEN", message: `帳號 ${email} 未獲授權` } });
+    if (tokenExpiry(req.token || "") - Date.now() < RENEW_BELOW_DAYS * 864e5) {
+      const renewToken = issueToken(email);
+      const plain = out;
+      const withRenew = (o) => plain({ ...o, renewToken });
+      return handlePost(req, email, withRenew);
+    }
+    return handlePost(req, email, out);
+  }
+  function handlePost(req, email, out) {
     try {
       const ss = openSpreadsheet();
       const svc = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss, email), calendar: gasCalendar });

@@ -291,11 +291,13 @@ export function healthCheck() {
 //
 // 手機瀏覽器會封鎖嵌入頁的 Google 登入資訊，因此 GitHub 網址改用「權杖」：
 // 1) 使用者在 GitHub 頁按「以 Google 帳號登入」→ 開啟本網頁應用程式（以使用者本人身分、頂層頁面，手機可用）
-// 2) 確認是 ADMIN_EMAILS 內的管理員後，簽發有效 7 天的 HMAC 權杖，帶回 GitHub 頁（URL #fragment，不經任何伺服器）
+// 2) 確認是 ADMIN_EMAILS 內的管理員後，簽發有效 90 天（使用中自動續期）的 HMAC 權杖，帶回 GitHub 頁（URL #fragment，不經任何伺服器）
 // 3) GitHub 頁以權杖呼叫「資料 API」部署（doPost），每次都在伺服器端驗證簽章、期限與管理員名單
 // 權杖密鑰自動產生並只存在 Script Properties；更換密鑰即可讓所有權杖失效。
 
-const TOKEN_DAYS = 7;
+/** 權杖有效 90 天；使用中會自動續期（剩不到 60 天時換發新權杖），經常使用就不必再登入 */
+const TOKEN_DAYS = 90;
+const RENEW_BELOW_DAYS = 60;
 const ALLOWED_RETURN = [/^https:\/\/luyun1224\.github\.io\/Chimei-SP\//, /^http:\/\/(localhost|127\.0\.0\.1)(:\d{2,5})?\//];
 
 function tokenSecret(): string {
@@ -313,6 +315,15 @@ function sign(data: string): string {
 function issueToken(email: string): string {
   const body = Utilities.base64EncodeWebSafe(JSON.stringify({ e: email, x: Date.now() + TOKEN_DAYS * 86400000 }), Utilities.Charset.UTF_8).replace(/=+$/, '');
   return `${body}.${sign(body)}`;
+}
+function tokenExpiry(token: string): number {
+  try {
+    const body = String(token).split('.')[0];
+    const pad = body + '='.repeat((4 - (body.length % 4)) % 4);
+    return Number(JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(pad)).getDataAsString('UTF-8')).x) || 0;
+  } catch {
+    return 0;
+  }
 }
 function verifyToken(token: string): string | null {
   const [body, sig] = String(token || '').split('.');
@@ -378,6 +389,18 @@ export function doPost(e: GoogleAppsScript.Events.DoPost) {
   const email = verifyToken(req.token || '');
   if (!email) return out({ ok: false, error: { code: 'UNAUTHENTICATED', message: '登入已過期，請重新登入' } });
   if (!adminList().includes(email)) return out({ ok: false, error: { code: 'FORBIDDEN', message: `帳號 ${email} 未獲授權` } });
+  // 自動續期：使用中的裝置不需重新登入
+  if (tokenExpiry(req.token || '') - Date.now() < RENEW_BELOW_DAYS * 86400000) {
+    const renewToken = issueToken(email);
+    const plain = out;
+    // eslint-disable-next-line @typescript-eslint/no-shadow
+    const withRenew = (o: unknown) => plain({ ...(o as object), renewToken });
+    return handlePost(req, email, withRenew);
+  }
+  return handlePost(req, email, out);
+}
+
+function handlePost(req: { action?: string; payload?: string }, email: string, out: (o: unknown) => GoogleAppsScript.Content.TextOutput) {
   try {
     const ss = openSpreadsheet();
     const svc = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss, email), calendar: gasCalendar });

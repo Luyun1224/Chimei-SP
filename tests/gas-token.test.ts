@@ -59,6 +59,22 @@ describe('登入權杖', () => {
     expect(post({ token, action: 'bootstrap' }).error.code).toBe('UNAUTHENTICATED');
   });
 
+  it('權杖 90 天有效，剩不到 60 天時自動續期', () => {
+    const token = tokenFrom(String(login().back));
+    expect(post({ token, action: 'bootstrap' }).renewToken).toBeUndefined();
+    const real = Date.now;
+    try {
+      Date.now = () => real() + 40 * 86400000;
+      const r = post({ token, action: 'bootstrap' });
+      expect(r.renewToken).toBeTruthy();
+      Date.now = () => real() + 91 * 86400000;
+      expect(post({ token, action: 'bootstrap' }).error.code).toBe('UNAUTHENTICATED');
+      expect(post({ token: r.renewToken, action: 'bootstrap' }).error.code).toBe('NOT_CONFIGURED'); // 續期後的權杖仍有效
+    } finally {
+      Date.now = real;
+    }
+  });
+
   it('非管理員、未登入、非白名單返回網址都不簽發權杖', () => {
     user = 'stranger@gmail.com';
     expect(login().back).toBe('');
