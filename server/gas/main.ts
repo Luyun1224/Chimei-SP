@@ -10,9 +10,9 @@
  *  - 不使用任何 Client Secret / Refresh Token / 服務帳戶金鑰。
  */
 import { createService } from '../service';
-import { createSheetsRepo, fmtGasDate } from './sheetsRepo';
+import { createSheetsRepo, fmtGasDate, settingFromSheet, settingKeyOf, settingToSheet } from './sheetsRepo';
 import { gasCalendar } from './calendarGateway';
-import { SETTINGS_SHEET, TABLES } from '../schema';
+import { LEGACY_SETTINGS_SHEET, SETTINGS_HEADER, SETTINGS_SHEET, SETTING_LABELS, TABLES, fromRow, toRow, type TableName } from '../schema';
 import { DEFAULT_SETTINGS } from '../../shared/template';
 import { TZ } from '../../shared/time';
 import type { Env } from '../ports';
@@ -57,7 +57,7 @@ function buildEnv(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): Env {
       const copy = SpreadsheetApp.create(`SP Performance Hub 備份 ${stamp}`);
       const names = [...Object.values(TABLES).map((t) => t.sheet), SETTINGS_SHEET];
       for (const n of names) {
-        const sh = ss.getSheetByName(n);
+        const sh = ss.getSheetByName(n);  // 中文工作表（setupSpreadsheet 後）
         if (sh) sh.copyTo(copy).setName(n);
       }
       const first = copy.getSheets()[0];
@@ -66,8 +66,11 @@ function buildEnv(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): Env {
     },
     health(): HealthReport {
       const settingsCal = (() => {
-        const v = ss.getSheetByName(SETTINGS_SHEET)?.getDataRange().getValues().find((r) => r[0] === 'calendarId');
-        return v ? String(v[1]) : '';
+        try {
+          return createSheetsRepo(ss).getSettings().calendarId || '';
+        } catch {
+          return '';
+        }
       })();
       let calendarOk = false, calendarName = '', calendarError = '';
       if (!settingsCal) calendarError = '尚未設定 Calendar ID';
@@ -86,8 +89,8 @@ function buildEnv(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): Env {
       return {
         spreadsheetOk: true,
         spreadsheetName: ss.getName(),
-        sheets: [...Object.values(TABLES).map((t) => t.sheet), SETTINGS_SHEET].map((name) => {
-          const sh = ss.getSheetByName(name);
+        sheets: [...Object.values(TABLES).map((t) => [t.sheet, t.legacySheet]), [SETTINGS_SHEET, LEGACY_SETTINGS_SHEET]].map(([name, legacy]) => {
+          const sh = ss.getSheetByName(name) || ss.getSheetByName(legacy);
           return { name, ok: !!sh, rows: sh ? Math.max(0, sh.getLastRow() - 1) : 0 };
         }),
         calendarOk,
@@ -193,35 +196,61 @@ export function setupSpreadsheet() {
     p.setProperty('SPREADSHEET_ID', id);
   }
   ss.setSpreadsheetTimeZone(TZ);
+  const now = fmtGasDate(new Date(), 'datetime');
 
-  const ensure = (name: string, header: string[], labels: string[]) => {
+  /** 取得工作表：舊版英文名稱自動改名為中文；不存在則建立 */
+  const sheetFor = (name: string, legacy: string) => {
     let sh = ss.getSheetByName(name);
-    if (!sh) sh = ss.insertSheet(name);
-    const cur = sh.getLastColumn() ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String) : [];
-    const missing = header.filter((h) => !cur.includes(h));
-    if (missing.length) {
-      sh.getRange(1, cur.length + 1, 1, missing.length).setValues([missing]);
-      missing.forEach((h, i) => {
-        const label = labels[header.indexOf(h)];
-        if (label) sh!.getRange(1, cur.length + 1 + i).setNote(label);
-      });
+    if (!sh) {
+      const old = ss.getSheetByName(legacy);
+      sh = old ? old.setName(name) : ss.insertSheet(name);
     }
-    const cols = sh.getLastColumn();
+    return sh;
+  };
+  const style = (sh: GoogleAppsScript.Spreadsheet.Sheet, cols: number) => {
     sh.getRange(1, 1, sh.getMaxRows(), cols).setNumberFormat('@');
     sh.getRange(1, 1, 1, cols).setFontWeight('bold').setBackground('#284A45').setFontColor('#FFFFFF');
     sh.setFrozenRows(1);
-    const prot = sh.getRange(1, 1, 1, cols).protect().setDescription('表頭由系統管理，請勿修改');
-    prot.setWarningOnly(true);
-    return sh;
+    const exists = sh.getProtections(SpreadsheetApp.ProtectionType.RANGE).some((x) => x.getDescription() === '表頭由系統管理，請勿修改');
+    if (!exists) sh.getRange(1, 1, 1, cols).protect().setDescription('表頭由系統管理，請勿修改').setWarningOnly(true);
   };
 
-  for (const t of Object.values(TABLES)) ensure(t.sheet, t.columns.map((c) => c.key), t.columns.map((c) => c.label));
-  const st = ensure(SETTINGS_SHEET, ['key', 'value', 'updatedAt'], ['設定鍵', '設定值', '更新時間']);
-  const existing = st.getDataRange().getValues().map((r) => String(r[0]));
-  const now = fmtGasDate(new Date(), 'datetime');
-  for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) {
-    if (!existing.includes(k)) st.appendRow([k, typeof v === 'string' ? v : JSON.stringify(v), now]);
+  // 資料表：表頭改為中文、既有資料的英文狀態值轉為中文；管理員自行新增的欄位保留在最後
+  for (const name of Object.keys(TABLES) as TableName[]) {
+    const def = TABLES[name];
+    const sh = sheetFor(def.sheet, def.legacySheet);
+    const values = sh.getLastRow() ? sh.getDataRange().getValues() : [[]];
+    const oldHeader = (values[0] || []).map(String);
+    const known = def.columns as readonly { key: string; label: string }[];
+    const extras = oldHeader.filter((h) => h && !known.some((c) => c.label === h || c.key === h));
+    const header = [...known.map((c) => c.label), ...extras];
+    const rows = values.slice(1).filter((r) => r.some((x) => x !== '' && x !== null)).map((r) => {
+      const obj = fromRow(name, oldHeader, r, fmtGasDate);
+      return [...toRow(name, obj as never), ...extras.map((h) => String(r[oldHeader.indexOf(h)] ?? ''))];
+    });
+    sh.clearContents();
+    sh.getRange(1, 1, 1 + rows.length, header.length).setNumberFormat('@').setValues([header, ...rows]);
+    style(sh, header.length);
   }
+
+  // 系統設定：中文項目名稱、易讀的值（清單每行一項、是/否）
+  const st = sheetFor(SETTINGS_SHEET, LEGACY_SETTINGS_SHEET);
+  const cur = st.getLastRow() ? st.getDataRange().getValues().slice(1) : [];
+  const json: Record<string, string> = {};
+  for (const r of cur) {
+    const key = settingKeyOf(String(r[0] || ''));
+    if (key) json[key] = settingFromSheet(key, String(r[1] ?? ''));
+  }
+  const settingRows = (Object.keys(DEFAULT_SETTINGS) as (keyof typeof DEFAULT_SETTINGS)[]).map((k) => {
+    const def = DEFAULT_SETTINGS[k];
+    const val = json[k] !== undefined && json[k] !== '' ? json[k] : typeof def === 'string' ? def : JSON.stringify(def);
+    return [SETTING_LABELS[k], settingToSheet(k, val), now];
+  });
+  st.clearContents();
+  st.getRange(1, 1, 1 + settingRows.length, 3).setNumberFormat('@').setValues([SETTINGS_HEADER, ...settingRows]);
+  st.setColumnWidth(1, 180).setColumnWidth(2, 420);
+  style(st, 3);
+
   const blank = ss.getSheetByName('Sheet1') || ss.getSheetByName('工作表1');
   if (blank && ss.getSheets().length > 1) ss.deleteSheet(blank);
 
@@ -229,7 +258,7 @@ export function setupSpreadsheet() {
     const me = currentEmail();
     if (me) p.setProperty('ADMIN_EMAILS', me);
   }
-  Logger.log('✅ 初始化完成：%s', ss.getUrl());
+  Logger.log('✅ 初始化完成（中文工作表）：%s', ss.getUrl());
   Logger.log('管理員：%s', adminList().join(', ') || '（未設定，請於 Script Properties 設定 ADMIN_EMAILS）');
   return ss.getUrl();
 }

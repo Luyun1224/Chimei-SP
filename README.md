@@ -49,12 +49,12 @@
 
 | 工作表 | 主鍵 | 內容 |
 |---|---|---|
-| `SP_Master` | `spId` | SP 人員主檔 |
-| `Performance_Sessions` | `sessionId` | 演出排程（狀態、Calendar Event ID、同步狀態、軟刪除、requestId、版本） |
-| `Performance_Assignments` | `assignmentId` | 每場 × 每位 SP 一筆：出席、實際時間、核定分鐘、核定人與時間 |
-| `Notification_Log` | `notificationId` | 人工通知標記（只新增不覆寫；以最新一筆為準；含排程指紋） |
-| `Audit_Log` | `auditId` | 所有異動前後內容、操作人、時間、原因 |
-| `System_Settings` | `key` | Calendar ID、範本、常用單位／教案／地點、門檻 |
+| `SP人員主檔` | `spId` | SP 人員主檔 |
+| `演出排程` | `sessionId` | 演出排程（狀態、Calendar Event ID、同步狀態、軟刪除、requestId、版本） |
+| `演出明細` | `assignmentId` | 每場 × 每位 SP 一筆：出席、實際時間、核定分鐘、核定人與時間 |
+| `LINE通知紀錄` | `notificationId` | 人工通知標記（只新增不覆寫；以最新一筆為準；含排程指紋） |
+| `異動紀錄` | `auditId` | 所有異動前後內容、操作人、時間、原因 |
+| `系統設定` | `key` | Calendar ID、範本、常用單位／教案／地點、門檻 |
 
 ### 統計口徑
 

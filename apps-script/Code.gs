@@ -785,18 +785,46 @@ var SPHub = (() => {
   }
 
   // server/schema.ts
-  var s = (key, label) => ({ key, type: "string", label });
+  var s = (key, label, en) => ({ key, type: "string", label, enum: en });
+  var ENUMS = {
+    spStatus: { active: "在職", paused: "暫停", inactive: "停用" },
+    sessionStatus: { scheduled: "預定", completed: "已完成", cancelled: "已取消" },
+    syncStatus: { pending: "待同步", synced: "已同步", failed: "同步失敗", removed: "已自日曆移除", disabled: "未設定日曆" },
+    attendance: { pending: "待確認", present: "已出席", absent: "缺席", cancelled: "取消" },
+    verifyStatus: { unverified: "未核定", verified: "已核定" },
+    notifyStatus: { notified: "已通知", not_notified: "未通知" },
+    auditEntity: { sp: "SP人員", session: "演出排程", assignment: "演出明細", notification: "LINE通知", settings: "系統設定", system: "系統" },
+    auditAction: {
+      create: "建立",
+      update: "修改",
+      cancel: "取消排程",
+      soft_delete: "刪除（軟刪除）",
+      complete: "標記完成",
+      verify: "核定",
+      correct: "更正核定",
+      unverify: "取消核定",
+      calendar_sync_failed: "日曆同步失敗",
+      "mark:notified": "標記已通知",
+      "mark:not_notified": "標記未通知",
+      "status:active": "狀態改為在職",
+      "status:paused": "狀態改為暫停",
+      "status:inactive": "狀態改為停用",
+      backup: "建立備份",
+      error: "系統錯誤"
+    }
+  };
   var TABLES = {
     sps: {
-      sheet: "SP_Master",
+      sheet: "SP人員主檔",
+      legacySheet: "SP_Master",
       idKey: "spId",
       columns: [
-        s("spId", "SP_ID"),
+        s("spId", "SP編號"),
         s("name", "姓名"),
         s("phone", "聯絡電話"),
         s("email", "電子郵件"),
-        s("lineNote", "LINE 顯示名稱/備註"),
-        s("status", "身分狀態"),
+        s("lineNote", "LINE顯示名稱/備註"),
+        s("status", "身分狀態", ENUMS.spStatus),
         s("joinDate", "加入日期"),
         s("certification", "認證狀態"),
         s("note", "備註"),
@@ -808,10 +836,11 @@ var SPHub = (() => {
       ]
     },
     sessions: {
-      sheet: "Performance_Sessions",
+      sheet: "演出排程",
+      legacySheet: "Performance_Sessions",
       idKey: "sessionId",
       columns: [
-        s("sessionId", "排程ID"),
+        s("sessionId", "排程編號"),
         s("date", "演出日期"),
         s("unit", "申請單位"),
         s("topic", "教案主題"),
@@ -820,15 +849,15 @@ var SPHub = (() => {
         s("endTime", "演出結束"),
         s("location", "演出地點"),
         s("note", "備註"),
-        s("status", "排程狀態"),
+        s("status", "排程狀態", ENUMS.sessionStatus),
         s("cancelReason", "取消原因"),
-        s("calendarEventId", "Calendar Event ID"),
-        s("syncStatus", "同步狀態"),
-        s("syncError", "同步錯誤"),
+        s("calendarEventId", "日曆事件ID"),
+        s("syncStatus", "日曆同步狀態", ENUMS.syncStatus),
+        s("syncError", "同步錯誤訊息"),
         s("syncedAt", "同步時間"),
         { key: "isDeleted", type: "bool", label: "已刪除" },
         s("deleteReason", "刪除原因"),
-        s("requestId", "請求ID"),
+        s("requestId", "請求編號"),
         s("createdAt", "建立時間"),
         s("createdBy", "建立者"),
         s("updatedAt", "修改時間"),
@@ -837,19 +866,20 @@ var SPHub = (() => {
       ]
     },
     assignments: {
-      sheet: "Performance_Assignments",
+      sheet: "演出明細",
+      legacySheet: "Performance_Assignments",
       idKey: "assignmentId",
       columns: [
-        s("assignmentId", "明細ID"),
-        s("sessionId", "排程ID"),
-        s("spId", "SP_ID"),
-        s("spNameSnapshot", "SP姓名(快照)"),
-        s("attendance", "出席狀態"),
+        s("assignmentId", "明細編號"),
+        s("sessionId", "排程編號"),
+        s("spId", "SP編號"),
+        s("spNameSnapshot", "SP姓名"),
+        s("attendance", "出席狀態", ENUMS.attendance),
         s("actualStart", "實際開始"),
         s("actualEnd", "實際結束"),
-        { key: "approvedMinutes", type: "nullable-number", label: "核定分鐘" },
+        { key: "approvedMinutes", type: "nullable-number", label: "核定分鐘數" },
         s("minutesNote", "時數備註"),
-        s("verifyStatus", "核定狀態"),
+        s("verifyStatus", "核定狀態", ENUMS.verifyStatus),
         s("verifiedBy", "核定人員"),
         s("verifiedAt", "核定時間"),
         { key: "isDeleted", type: "bool", label: "已刪除" },
@@ -860,14 +890,15 @@ var SPHub = (() => {
       ]
     },
     notifications: {
-      sheet: "Notification_Log",
+      sheet: "LINE通知紀錄",
+      legacySheet: "Notification_Log",
       idKey: "notificationId",
       columns: [
-        s("notificationId", "紀錄ID"),
-        s("sessionId", "排程ID"),
-        s("assignmentId", "明細ID"),
-        s("spId", "SP_ID"),
-        s("status", "通知狀態"),
+        s("notificationId", "紀錄編號"),
+        s("sessionId", "排程編號"),
+        s("assignmentId", "明細編號"),
+        s("spId", "SP編號"),
+        s("status", "通知狀態", ENUMS.notifyStatus),
         s("markedBy", "標記人員"),
         s("markedAt", "標記時間"),
         s("fingerprint", "排程指紋"),
@@ -875,36 +906,57 @@ var SPHub = (() => {
       ]
     },
     audit: {
-      sheet: "Audit_Log",
+      sheet: "異動紀錄",
+      legacySheet: "Audit_Log",
       idKey: "auditId",
       columns: [
-        s("auditId", "稽核ID"),
+        s("auditId", "紀錄編號"),
         s("at", "時間"),
         s("actor", "操作人員"),
-        s("entity", "對象類型"),
-        s("entityId", "對象ID"),
-        s("action", "動作"),
+        s("entity", "對象類型", ENUMS.auditEntity),
+        s("entityId", "對象編號"),
+        s("action", "動作", ENUMS.auditAction),
         s("before", "異動前"),
         s("after", "異動後"),
         s("note", "說明")
       ]
     }
   };
-  var SETTINGS_SHEET = "System_Settings";
+  var SETTINGS_SHEET = "系統設定";
+  var LEGACY_SETTINGS_SHEET = "System_Settings";
+  var SETTINGS_HEADER = ["設定項目", "設定值", "更新時間"];
+  var SETTING_LABELS = {
+    calendarId: "Google日曆ID",
+    adminReminderEnabled: "管理員日曆提醒",
+    adminReminderMinutes: "提前提醒分鐘數",
+    individualTemplate: "個別通知範本",
+    summaryTemplate: "總整理通知範本",
+    units: "常用申請單位",
+    topics: "常用教案主題",
+    locations: "常用演出地點",
+    inactiveThresholdDays: "長期未排演出門檻天數"
+  };
+  var BOOL_TRUE = ["TRUE", "true", "是", "Y", "1"];
+  function colIndex(header, c) {
+    const i = header.indexOf(c.label);
+    return i >= 0 ? i : header.indexOf(c.key);
+  }
   function toRow(t, obj) {
     const def = TABLES[t];
     return def.columns.map((c) => {
       const v = obj[c.key];
-      if (c.type === "bool") return v ? "TRUE" : "FALSE";
+      if (c.type === "bool") return v ? "是" : "否";
       if (v === null || v === void 0) return "";
-      return String(v);
+      const str = String(v);
+      return c.enum && str in c.enum ? c.enum[str] : str;
     });
   }
   function fromRow(t, header, row, fmtDate2) {
+    var _a;
     const def = TABLES[t];
     const out = {};
     for (const c of def.columns) {
-      const idx = header.indexOf(c.key);
+      const idx = colIndex(header, c);
       let v = idx >= 0 ? row[idx] : "";
       if (v instanceof Date) {
         const kind = /Time$|^actual/.test(c.key) ? "time" : c.key === "date" || c.key === "joinDate" ? "date" : "datetime";
@@ -912,8 +964,15 @@ var SPHub = (() => {
       }
       if (c.type === "number") out[c.key] = Number(v) || 0;
       else if (c.type === "nullable-number") out[c.key] = v === "" || v === null || v === void 0 ? null : Number(v);
-      else if (c.type === "bool") out[c.key] = v === true || String(v).toUpperCase() === "TRUE";
-      else out[c.key] = v === null || v === void 0 ? "" : String(v);
+      else if (c.type === "bool") out[c.key] = v === true || BOOL_TRUE.includes(String(v).trim());
+      else {
+        let str = v === null || v === void 0 ? "" : String(v);
+        if (c.enum) {
+          const code = (_a = Object.entries(c.enum).find(([, label]) => label === str)) == null ? void 0 : _a[0];
+          if (code) str = code;
+        }
+        out[c.key] = str;
+      }
     }
     return out;
   }
@@ -928,8 +987,8 @@ var SPHub = (() => {
   function createSheetsRepo(ss) {
     const cache = /* @__PURE__ */ new Map();
     let settingsCache = null;
-    function sheetOf(name) {
-      const sh = ss.getSheetByName(name);
+    function sheetOf(name, legacy) {
+      const sh = ss.getSheetByName(name) || (legacy ? ss.getSheetByName(legacy) : null);
       if (!sh) throw new AppError("NOT_CONFIGURED", `找不到工作表「${name}」，請先執行 setupSpreadsheet 初始化`);
       return sh;
     }
@@ -937,10 +996,11 @@ var SPHub = (() => {
       const hit = cache.get(t);
       if (hit) return hit;
       const def = TABLES[t];
-      const sheet = sheetOf(def.sheet);
+      const sheet = sheetOf(def.sheet, def.legacySheet);
       const values = sheet.getDataRange().getValues();
       const header = (values[0] || []).map(String);
-      const idIdx = header.indexOf(def.idKey);
+      const idCol = def.columns.find((c) => c.key === def.idKey);
+      const idIdx = colIndex(header, idCol);
       if (idIdx < 0) throw new AppError("NOT_CONFIGURED", `工作表「${def.sheet}」缺少主鍵欄位 ${def.idKey}`);
       const rows = [], rowNumbers = [], ids = [];
       for (let i = 1; i < values.length; i++) {
@@ -959,7 +1019,7 @@ var SPHub = (() => {
       const def = TABLES[t];
       const vals = toRow(t, obj);
       return header.map((h) => {
-        const i = def.columns.findIndex((c) => c.key === h);
+        const i = def.columns.findIndex((c) => c.label === h || c.key === h);
         return i >= 0 ? sheetSafe(vals[i]) : "";
       });
     }
@@ -1001,27 +1061,58 @@ var SPHub = (() => {
       getSettings() {
         var _a;
         if (settingsCache) return { ...settingsCache };
-        const values = sheetOf(SETTINGS_SHEET).getDataRange().getValues();
+        const values = sheetOf(SETTINGS_SHEET, LEGACY_SETTINGS_SHEET).getDataRange().getValues();
         const out = {};
-        for (let i = 1; i < values.length; i++) if (values[i][0]) out[String(values[i][0])] = String((_a = unescape(values[i][1])) != null ? _a : "");
+        for (let i = 1; i < values.length; i++) {
+          const key = settingKeyOf(String(values[i][0] || ""));
+          if (key) out[key] = settingFromSheet(key, String((_a = unescape(values[i][1])) != null ? _a : ""));
+        }
         settingsCache = out;
         return { ...out };
       },
       setSettings(kv) {
-        const sh = sheetOf(SETTINGS_SHEET);
+        const sh = sheetOf(SETTINGS_SHEET, LEGACY_SETTINGS_SHEET);
         const values = sh.getDataRange().getValues();
         const now = fmtGasDate(/* @__PURE__ */ new Date(), "datetime");
         for (const [k, v] of Object.entries(kv)) {
-          const idx = values.findIndex((r, i) => i > 0 && r[0] === k);
-          if (idx > 0) sh.getRange(idx + 1, 2, 1, 2).setValues([[sheetSafe(v), now]]);
+          const label = SETTING_LABELS[k] || k;
+          const idx = values.findIndex((r, i) => i > 0 && (r[0] === label || r[0] === k));
+          const shown = sheetSafe(settingToSheet(k, v));
+          if (idx > 0) sh.getRange(idx + 1, 1, 1, 3).setValues([[label, shown, now]]);
           else {
-            sh.appendRow([k, sheetSafe(v), now]);
-            values.push([k, v, now]);
+            sh.appendRow([label, shown, now]);
+            values.push([label, shown, now]);
           }
         }
         settingsCache = null;
       }
     };
+  }
+  function settingKeyOf(name) {
+    const hit = Object.entries(SETTING_LABELS).find(([k, label]) => label === name || k === name);
+    return hit ? hit[0] : "";
+  }
+  function settingToSheet(key, json) {
+    const def = DEFAULT_SETTINGS[key];
+    if (typeof def === "string") return json;
+    try {
+      const v = JSON.parse(json);
+      if (Array.isArray(v)) return v.join("\n");
+      if (typeof v === "boolean") return v ? "是" : "否";
+      return String(v);
+    } catch {
+      return json;
+    }
+  }
+  function settingFromSheet(key, shown) {
+    const def = DEFAULT_SETTINGS[key];
+    if (typeof def === "string") return shown;
+    const t = shown.trim();
+    if (t.startsWith("[") || t === "true" || t === "false") return t;
+    if (Array.isArray(def)) return JSON.stringify(t ? t.split(/\r?\n/).map((x) => x.trim()).filter(Boolean) : []);
+    if (typeof def === "boolean") return JSON.stringify(["是", "TRUE", "Y", "1"].includes(t));
+    if (typeof def === "number") return t === "" ? "" : JSON.stringify(Number(t));
+    return t;
   }
 
   // server/gas/calendarGateway.ts
@@ -1115,9 +1206,11 @@ var SPHub = (() => {
       },
       health() {
         const settingsCal = (() => {
-          var _a;
-          const v = (_a = ss.getSheetByName(SETTINGS_SHEET)) == null ? void 0 : _a.getDataRange().getValues().find((r) => r[0] === "calendarId");
-          return v ? String(v[1]) : "";
+          try {
+            return createSheetsRepo(ss).getSettings().calendarId || "";
+          } catch {
+            return "";
+          }
         })();
         let calendarOk = false, calendarName = "", calendarError = "";
         if (!settingsCal) calendarError = "尚未設定 Calendar ID";
@@ -1136,8 +1229,8 @@ var SPHub = (() => {
         return {
           spreadsheetOk: true,
           spreadsheetName: ss.getName(),
-          sheets: [...Object.values(TABLES).map((t) => t.sheet), SETTINGS_SHEET].map((name) => {
-            const sh = ss.getSheetByName(name);
+          sheets: [...Object.values(TABLES).map((t) => [t.sheet, t.legacySheet]), [SETTINGS_SHEET, LEGACY_SETTINGS_SHEET]].map(([name, legacy]) => {
+            const sh = ss.getSheetByName(name) || ss.getSheetByName(legacy);
             return { name, ok: !!sh, rows: sh ? Math.max(0, sh.getLastRow() - 1) : 0 };
           }),
           calendarOk,
@@ -1213,6 +1306,7 @@ var SPHub = (() => {
     }
   }
   function setupSpreadsheet() {
+    var _a;
     const p = props();
     let id = p.getProperty("SPREADSHEET_ID");
     const ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.create("SP Performance Hub 資料庫");
@@ -1221,40 +1315,64 @@ var SPHub = (() => {
       p.setProperty("SPREADSHEET_ID", id);
     }
     ss.setSpreadsheetTimeZone(TZ);
-    const ensure = (name, header, labels) => {
+    const now = fmtGasDate(/* @__PURE__ */ new Date(), "datetime");
+    const sheetFor = (name, legacy) => {
       let sh = ss.getSheetByName(name);
-      if (!sh) sh = ss.insertSheet(name);
-      const cur = sh.getLastColumn() ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String) : [];
-      const missing = header.filter((h) => !cur.includes(h));
-      if (missing.length) {
-        sh.getRange(1, cur.length + 1, 1, missing.length).setValues([missing]);
-        missing.forEach((h, i) => {
-          const label = labels[header.indexOf(h)];
-          if (label) sh.getRange(1, cur.length + 1 + i).setNote(label);
-        });
+      if (!sh) {
+        const old = ss.getSheetByName(legacy);
+        sh = old ? old.setName(name) : ss.insertSheet(name);
       }
-      const cols = sh.getLastColumn();
+      return sh;
+    };
+    const style = (sh, cols) => {
       sh.getRange(1, 1, sh.getMaxRows(), cols).setNumberFormat("@");
       sh.getRange(1, 1, 1, cols).setFontWeight("bold").setBackground("#284A45").setFontColor("#FFFFFF");
       sh.setFrozenRows(1);
-      const prot = sh.getRange(1, 1, 1, cols).protect().setDescription("表頭由系統管理，請勿修改");
-      prot.setWarningOnly(true);
-      return sh;
+      const exists = sh.getProtections(SpreadsheetApp.ProtectionType.RANGE).some((x) => x.getDescription() === "表頭由系統管理，請勿修改");
+      if (!exists) sh.getRange(1, 1, 1, cols).protect().setDescription("表頭由系統管理，請勿修改").setWarningOnly(true);
     };
-    for (const t of Object.values(TABLES)) ensure(t.sheet, t.columns.map((c) => c.key), t.columns.map((c) => c.label));
-    const st = ensure(SETTINGS_SHEET, ["key", "value", "updatedAt"], ["設定鍵", "設定值", "更新時間"]);
-    const existing = st.getDataRange().getValues().map((r) => String(r[0]));
-    const now = fmtGasDate(/* @__PURE__ */ new Date(), "datetime");
-    for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) {
-      if (!existing.includes(k)) st.appendRow([k, typeof v === "string" ? v : JSON.stringify(v), now]);
+    for (const name of Object.keys(TABLES)) {
+      const def = TABLES[name];
+      const sh = sheetFor(def.sheet, def.legacySheet);
+      const values = sh.getLastRow() ? sh.getDataRange().getValues() : [[]];
+      const oldHeader = (values[0] || []).map(String);
+      const known = def.columns;
+      const extras = oldHeader.filter((h) => h && !known.some((c) => c.label === h || c.key === h));
+      const header = [...known.map((c) => c.label), ...extras];
+      const rows = values.slice(1).filter((r) => r.some((x) => x !== "" && x !== null)).map((r) => {
+        const obj = fromRow(name, oldHeader, r, fmtGasDate);
+        return [...toRow(name, obj), ...extras.map((h) => {
+          var _a2;
+          return String((_a2 = r[oldHeader.indexOf(h)]) != null ? _a2 : "");
+        })];
+      });
+      sh.clearContents();
+      sh.getRange(1, 1, 1 + rows.length, header.length).setNumberFormat("@").setValues([header, ...rows]);
+      style(sh, header.length);
     }
+    const st = sheetFor(SETTINGS_SHEET, LEGACY_SETTINGS_SHEET);
+    const cur = st.getLastRow() ? st.getDataRange().getValues().slice(1) : [];
+    const json = {};
+    for (const r of cur) {
+      const key = settingKeyOf(String(r[0] || ""));
+      if (key) json[key] = settingFromSheet(key, String((_a = r[1]) != null ? _a : ""));
+    }
+    const settingRows = Object.keys(DEFAULT_SETTINGS).map((k) => {
+      const def = DEFAULT_SETTINGS[k];
+      const val = json[k] !== void 0 && json[k] !== "" ? json[k] : typeof def === "string" ? def : JSON.stringify(def);
+      return [SETTING_LABELS[k], settingToSheet(k, val), now];
+    });
+    st.clearContents();
+    st.getRange(1, 1, 1 + settingRows.length, 3).setNumberFormat("@").setValues([SETTINGS_HEADER, ...settingRows]);
+    st.setColumnWidth(1, 180).setColumnWidth(2, 420);
+    style(st, 3);
     const blank = ss.getSheetByName("Sheet1") || ss.getSheetByName("工作表1");
     if (blank && ss.getSheets().length > 1) ss.deleteSheet(blank);
     if (!adminList().length) {
       const me = currentEmail();
       if (me) p.setProperty("ADMIN_EMAILS", me);
     }
-    Logger.log("✅ 初始化完成：%s", ss.getUrl());
+    Logger.log("✅ 初始化完成（中文工作表）：%s", ss.getUrl());
     Logger.log("管理員：%s", adminList().join(", ") || "（未設定，請於 Script Properties 設定 ADMIN_EMAILS）");
     return ss.getUrl();
   }

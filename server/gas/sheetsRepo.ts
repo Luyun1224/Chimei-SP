@@ -1,6 +1,7 @@
 /// <reference types="google-apps-script" />
 import type { Repo } from '../ports';
-import { SETTINGS_SHEET, TABLES, fromRow, toRow, type RowTypes, type TableName, type TableDef } from '../schema';
+import { LEGACY_SETTINGS_SHEET, SETTINGS_SHEET, SETTING_LABELS, TABLES, colIndex, fromRow, toRow, type RowTypes, type TableName, type TableDef } from '../schema';
+import { DEFAULT_SETTINGS } from '../../shared/template';
 import { AppError, sheetSafe } from '../../shared/validate';
 import { TZ } from '../../shared/time';
 
@@ -27,8 +28,9 @@ export function createSheetsRepo(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): 
   const cache = new Map<TableName, Loaded>();
   let settingsCache: Record<string, string> | null = null;
 
-  function sheetOf(name: string): Sheet {
-    const sh = ss.getSheetByName(name);
+  /** 先找中文工作表，找不到再找舊版英文工作表 */
+  function sheetOf(name: string, legacy?: string): Sheet {
+    const sh = ss.getSheetByName(name) || (legacy ? ss.getSheetByName(legacy) : null);
     if (!sh) throw new AppError('NOT_CONFIGURED', `找不到工作表「${name}」，請先執行 setupSpreadsheet 初始化`);
     return sh;
   }
@@ -37,10 +39,11 @@ export function createSheetsRepo(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): 
     const hit = cache.get(t);
     if (hit) return hit;
     const def = TABLES[t] as unknown as TableDef<RowTypes[TableName]>;
-    const sheet = sheetOf(def.sheet);
+    const sheet = sheetOf(def.sheet, def.legacySheet);
     const values = sheet.getDataRange().getValues();
     const header = (values[0] || []).map(String);
-    const idIdx = header.indexOf(def.idKey);
+    const idCol = def.columns.find((c) => c.key === def.idKey)!;
+    const idIdx = colIndex(header, idCol);
     if (idIdx < 0) throw new AppError('NOT_CONFIGURED', `工作表「${def.sheet}」缺少主鍵欄位 ${def.idKey}`);
     const rows: Record<string, unknown>[] = [], rowNumbers: number[] = [], ids: string[] = [];
     for (let i = 1; i < values.length; i++) {
@@ -61,7 +64,7 @@ export function createSheetsRepo(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): 
     const def = TABLES[t] as unknown as TableDef<RowTypes[K]>;
     const vals = toRow(t, obj);
     return header.map((h) => {
-      const i = def.columns.findIndex((c) => c.key === h);
+      const i = def.columns.findIndex((c) => c.label === h || c.key === h);
       return i >= 0 ? sheetSafe(vals[i]) : '';
     });
   }
@@ -103,25 +106,63 @@ export function createSheetsRepo(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): 
     },
     getSettings() {
       if (settingsCache) return { ...settingsCache };
-      const values = sheetOf(SETTINGS_SHEET).getDataRange().getValues();
+      const values = sheetOf(SETTINGS_SHEET, LEGACY_SETTINGS_SHEET).getDataRange().getValues();
       const out: Record<string, string> = {};
-      for (let i = 1; i < values.length; i++) if (values[i][0]) out[String(values[i][0])] = String(unescape(values[i][1]) ?? '');
+      for (let i = 1; i < values.length; i++) {
+        const key = settingKeyOf(String(values[i][0] || ''));
+        if (key) out[key] = settingFromSheet(key, String(unescape(values[i][1]) ?? ''));
+      }
       settingsCache = out;
       return { ...out };
     },
     setSettings(kv) {
-      const sh = sheetOf(SETTINGS_SHEET);
+      const sh = sheetOf(SETTINGS_SHEET, LEGACY_SETTINGS_SHEET);
       const values = sh.getDataRange().getValues();
       const now = fmtGasDate(new Date(), 'datetime');
       for (const [k, v] of Object.entries(kv)) {
-        const idx = values.findIndex((r, i) => i > 0 && r[0] === k);
-        if (idx > 0) sh.getRange(idx + 1, 2, 1, 2).setValues([[sheetSafe(v), now]]);
+        const label = SETTING_LABELS[k as keyof typeof SETTING_LABELS] || k;
+        const idx = values.findIndex((r, i) => i > 0 && (r[0] === label || r[0] === k));
+        const shown = sheetSafe(settingToSheet(k, v));
+        if (idx > 0) sh.getRange(idx + 1, 1, 1, 3).setValues([[label, shown, now]]);
         else {
-          sh.appendRow([k, sheetSafe(v), now]);
-          values.push([k, v, now]);
+          sh.appendRow([label, shown, now]);
+          values.push([label, shown, now]);
         }
       }
       settingsCache = null;
     },
   };
+}
+
+// ---------- 系統設定：中文項目名稱與易讀的值 ----------
+
+/** 中文項目名稱或英文代碼 → 設定代碼 */
+export function settingKeyOf(name: string): string {
+  const hit = Object.entries(SETTING_LABELS).find(([k, label]) => label === name || k === name);
+  return hit ? hit[0] : '';
+}
+
+/** 服務層使用 JSON 字串；工作表上改為易讀格式：清單每行一項、布林為 是/否 */
+export function settingToSheet(key: string, json: string): string {
+  const def = (DEFAULT_SETTINGS as unknown as Record<string, unknown>)[key];
+  if (typeof def === 'string') return json;
+  try {
+    const v = JSON.parse(json);
+    if (Array.isArray(v)) return v.join('\n');
+    if (typeof v === 'boolean') return v ? '是' : '否';
+    return String(v);
+  } catch {
+    return json;
+  }
+}
+
+export function settingFromSheet(key: string, shown: string): string {
+  const def = (DEFAULT_SETTINGS as unknown as Record<string, unknown>)[key];
+  if (typeof def === 'string') return shown;
+  const t = shown.trim();
+  if (t.startsWith('[') || t === 'true' || t === 'false') return t; // 舊版 JSON 格式
+  if (Array.isArray(def)) return JSON.stringify(t ? t.split(/\r?\n/).map((x) => x.trim()).filter(Boolean) : []);
+  if (typeof def === 'boolean') return JSON.stringify(['是', 'TRUE', 'Y', '1'].includes(t));
+  if (typeof def === 'number') return t === '' ? '' : JSON.stringify(Number(t));
+  return t;
 }
