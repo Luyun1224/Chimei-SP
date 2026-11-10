@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/* ============ Design Tokens ============ */
+@theme {
+  --font-sans: "Inter", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-display: "Noto Serif TC", "Noto Sans TC", Georgia, serif;
+
+  --color-cream: #F7F4ED;
+  --color-pine: #284A45;
+  --color-pine-700: #1E3834;
+  --color-pine-600: #335C56;
+  --color-pine-50: #E7EEEB;
+  --color-sage: #A8BCAF;
+  --color-sage-200: #D3DED6;
+  --color-gold: #C6A77A;
+  --color-gold-600: #9A7B4E;
+  --color-gold-50: #F6EFE3;
+  --color-ink: #252B2D;
+  --color-ink-2: #4E5658;
+  --color-ink-3: #6F7678;
+  --color-mist: #ECEFE7;
+  --color-line: #E4E0D5;
+  --color-card: #FFFFFF;
+  --color-danger: #B4483C;
+  --color-danger-50: #F8E9E6;
+  --color-warn: #A86E12;
+  --color-warn-50: #FBF1DE;
+  --color-ok: #2F7A55;
+  --color-ok-50: #E4F2EA;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-xl: 30px;
+
+  --shadow-soft: 0 1px 2px rgb(37 43 45 / 0.04), 0 8px 24px -12px rgb(37 43 45 / 0.12);
+  --shadow-lift: 0 2px 4px rgb(37 43 45 / 0.05), 0 18px 40px -18px rgb(40 74 69 / 0.35);
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    @apply bg-cream text-ink antialiased;
+    font-family: var(--font-sans);
+    font-feature-settings: "tnum" 1, "cv11" 1;
+  }
+  :focus-visible { outline: 2px solid var(--color-gold-600); outline-offset: 2px; border-radius: 6px; }
+  ::selection { background: var(--color-sage-200); }
+  input, select, textarea, button { font: inherit; }
+}
+
+@layer components {
+  .eyebrow { @apply text-[11px] font-semibold tracking-[0.18em] uppercase text-ink-3; }
+  .display { font-family: var(--font-display); letter-spacing: -0.01em; }
+  .num { font-variant-numeric: tabular-nums; font-family: "Inter", var(--font-sans); }
+  .hairline { @apply border-line; }
+  .field {
+    @apply w-full rounded-[10px] border border-line bg-white px-3 py-2 text-[15px] text-ink outline-none transition
+      placeholder:text-ink-3/70 focus:border-pine focus:ring-2 focus:ring-pine/15 disabled:bg-mist;
+  }
+  .field-error { @apply border-danger focus:border-danger focus:ring-danger/15; }
+  .tbl { @apply w-full text-[14px]; }
+  .tbl th { @apply sticky top-0 bg-white text-left text-[12px] font-semibold tracking-wide text-ink-3 px-3 py-2.5 border-b border-line whitespace-nowrap; }
+  .tbl td { @apply px-3 py-2.5 border-b border-line/70 align-top; }
+  .tbl tbody tr { @apply transition-colors; }
+  .tbl tbody tr:hover { @apply bg-mist/50; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+@media print {
+  body { background: #fff; }
+  .no-print { display: none !important; }
+  .print-break { break-before: page; }
+  .print-avoid { break-inside: avoid; }
+  aside, header.app-top { display: none !important; }
+  main { padding: 0 !important; margin: 0 !important; }
+}

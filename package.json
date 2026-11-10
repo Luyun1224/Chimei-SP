@@ -1,0 +1,39 @@
+{
+  "name": "sp-performance-hub",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "SP Performance Hub｜奇美醫院臨床技能中心 標準化病人演出歷程管理平台",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "build:web": "vite build",
+    "build:gas": "node scripts/build-gas.mjs",
+    "build": "npm run build:web && npm run build:gas",
+    "push": "npm run build && clasp push --force",
+    "deploy": "npm run push && clasp deploy --description \"SP Performance Hub\""
+  },
+  "dependencies": {
+    "lucide-react": "^1.71.0",
+    "motion": "^14.11.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.4.1",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/google-apps-script": "^2.0.15",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "esbuild": "^0.28.2",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.7",
+    "vite-plugin-singlefile": "^2.3.4",
+    "vitest": "^5.1.0"
+  }
+}

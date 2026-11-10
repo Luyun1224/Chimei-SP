@@ -1,0 +1,11 @@
+node_modules/
+dist/
+gas/Code.js
+gas/index.html
+.clasp.json
+.clasprc.json
+.env
+.env.*
+!.env.example
+*.log
+test-results/
