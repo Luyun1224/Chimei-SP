@@ -1454,8 +1454,12 @@ var SPHub = (() => {
           <li><b>部署設定</b>：Apps Script「管理部署作業」中，執行身分須為「<b>存取網頁應用程式的使用者</b>」，存取權須為「<b>任何擁有 Google 帳戶的使用者</b>」（或貴院網域），不可選「任何人」。</li>
           <li><b>從 GitHub 網址嵌入開啟時</b>：瀏覽器封鎖了第三方 Cookie（無痕視窗預設會封鎖）。請到 Chrome「設定 → 隱私權和安全性 → 第三方 Cookie → 允許使用第三方 Cookie 的網站」加入 <b>luyun1224.github.io</b>，或改用下方按鈕直接開啟。</li>
         </ol>
-        <a class="btn" href="<?= url ?>" target="_blank" rel="noopener">在新分頁直接開啟系統</a>
+        <a class="btn" href="<?= url ?>" target="_top" rel="noopener">直接開啟系統</a>
       <? } ?>
+      <script>
+        // 通知外層入口頁（GitHub）：嵌入時無法取得登入身分 → 入口頁會自動改為直接開啟
+        try { window.top.postMessage({ source: 'sp-hub', type: '<?= email ? "forbidden" : "auth-failed" ?>' }, '*'); } catch (e) {}
+      <\/script>
       </main></body></html>`
       );
       t.email = email;

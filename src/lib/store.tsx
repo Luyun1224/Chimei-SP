@@ -23,6 +23,15 @@ interface DataCtx {
 
 const Ctx = createContext<DataCtx | null>(null);
 
+/** 嵌在 GitHub 入口頁時，回報載入狀態，讓入口頁在無法登入時改為直接開啟 */
+function notifyEntry(type: 'ready' | 'auth-failed' | 'error') {
+  try {
+    if (window.top && window.top !== window) window.top.postMessage({ source: 'sp-hub', type }, '*');
+  } catch {
+    /* 非嵌入情境忽略 */
+  }
+}
+
 function mergeBy<T>(list: T[], updates: T[] | undefined, key: keyof T): T[] {
   if (!updates?.length) return list;
   const m = new Map(list.map((x) => [x[key], x]));
@@ -41,8 +50,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       setSnap(await call('bootstrap', {}));
+      notifyEntry('ready');
     } catch (e) {
-      setError(e instanceof ApiCallError ? e : new ApiCallError({ code: 'INTERNAL', message: String(e) }));
+      const err = e instanceof ApiCallError ? e : new ApiCallError({ code: 'INTERNAL', message: String(e) });
+      setError(err);
+      notifyEntry(err.code === 'UNAUTHENTICATED' ? 'auth-failed' : 'error');
     } finally {
       setLoading(false);
     }

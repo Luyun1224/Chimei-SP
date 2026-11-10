@@ -8,8 +8,8 @@
   <style>
     html, body { margin:0; height:100%; background:#F7F4ED; }
     iframe { position:fixed; inset:0; width:100%; height:100%; border:0; }
-    #loading { position:fixed; inset:0; display:grid; place-items:center; color:#284A45;
-      font-family:system-ui,"Noto Sans TC","Microsoft JhengHei",sans-serif; font-size:15px; }
+    #loading { position:fixed; inset:0; display:grid; place-items:center; color:#284A45; text-align:center; padding:24px;
+      font-family:system-ui,"Noto Sans TC","Microsoft JhengHei",sans-serif; font-size:15px; line-height:1.7; }
     #direct { position:fixed; right:14px; bottom:14px; z-index:2; padding:6px 12px; border-radius:999px; background:rgba(40,74,69,.85);
       color:#fff; font:12px system-ui,"Noto Sans TC",sans-serif; text-decoration:none; opacity:.35; transition:opacity .2s; }
     #direct:hover, #direct:focus-visible { opacity:1; }
@@ -18,10 +18,23 @@
 <body>
   <div id="loading">SP Performance Hub 載入中…</div>
   <!-- 正式系統（Google Apps Script）。讀寫 Google Sheets 與權限檢查仍由 Apps Script 以管理員本人的 Google 身分處理 -->
-  <iframe id="app" title="SP Performance Hub" allow="clipboard-write"
-          src="https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec"
-          onload="var l=document.getElementById('loading'); if (l) l.remove();"></iframe>
-  <a id="direct" target="_blank" rel="noopener" title="第一次授權或畫面空白時，請改在新分頁開啟"
-     href="https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec">↗ 新分頁開啟</a>
+  <iframe id="app" title="SP Performance Hub" allow="clipboard-write" src="https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec"></iframe>
+  <a id="direct" target="_top" rel="noopener" title="畫面空白或無法登入時，直接開啟系統" href="https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec">↗ 直接開啟</a>
+  <script>
+    // 手機（iPhone Safari、LINE 等內建瀏覽器）會封鎖嵌入頁的 Google 登入資訊（第三方 Cookie）。
+    // 系統載入後會回報狀態：無法辨識帳號或逾時未回應時，自動改為直接開啟 Apps Script 網址。
+    var APP = 'https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec';
+    var done = false;
+    function go() { if (!done) { done = true; document.getElementById('loading').textContent = '正在改為直接開啟系統…'; window.location.replace(APP); } }
+    window.addEventListener('message', function (e) {
+      var d = e.data || {};
+      if (d.source !== 'sp-hub') return;
+      if (d.type === 'ready' || d.type === 'forbidden' || d.type === 'error') {
+        done = true;
+        var l = document.getElementById('loading'); if (l) l.remove();
+      } else if (d.type === 'auth-failed') go();
+    });
+    setTimeout(function () { if (!done) go(); }, 12000);
+  </script>
 </body>
 </html>
