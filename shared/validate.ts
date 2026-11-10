@@ -55,7 +55,7 @@ export function validateSpInput(raw: SpInput): Required<SpInput> {
   return v;
 }
 
-export function validateSessionInput(raw: SessionInput): SessionInput & { note: string } {
+export function validateSessionInput(raw: SessionInput): SessionInput & { note: string; newSpNames: string[] } {
   const v = {
     date: clean(raw.date, 10),
     unit: clean(raw.unit, MAX.text),
@@ -66,6 +66,7 @@ export function validateSessionInput(raw: SessionInput): SessionInput & { note: 
     location: clean(raw.location, MAX.text),
     note: clean(raw.note, MAX.note),
     spIds: Array.isArray(raw.spIds) ? [...new Set(raw.spIds.map((s) => clean(s, 40)).filter(Boolean))] : [],
+    newSpNames: Array.isArray(raw.newSpNames) ? [...new Set(raw.newSpNames.map((s) => clean(s, MAX.name)).filter(Boolean))] : [],
   };
   const e: Errors = {};
   if (!isValidDate(v.date)) e.date = '請選擇正確的演出日期';
@@ -78,8 +79,8 @@ export function validateSessionInput(raw: SessionInput): SessionInput & { note: 
   if (!e.startTime && !e.endTime && diffMinutes(v.startTime, v.endTime) <= 0) e.endTime = '演出結束時間必須晚於開始時間';
   if (!e.checkinTime && !e.startTime && diffMinutes(v.checkinTime, v.startTime) < 0)
     e.checkinTime = '報到時間不可晚於演出開始時間';
-  if (!v.spIds.length) e.spIds = '請至少選擇一位 SP';
-  if (v.spIds.length > 50) e.spIds = '單場 SP 人數過多';
+  if (!v.spIds.length && !v.newSpNames.length) e.spIds = '請至少選擇或輸入一位 SP';
+  if (v.spIds.length + v.newSpNames.length > 50) e.spIds = '單場 SP 人數過多';
   fail(e);
   return v;
 }

@@ -159,6 +159,8 @@ export interface SessionInput {
   location: string;
   note?: string;
   spIds: string[];
+  /** 直接輸入、尚未建檔的 SP 姓名；儲存時自動建立 SP 主檔（同名已存在則沿用） */
+  newSpNames?: string[];
 }
 
 export interface VerifyInput {

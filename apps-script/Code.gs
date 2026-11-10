@@ -110,7 +110,8 @@ var SPHub = (() => {
       endTime: clean(raw.endTime, 5),
       location: clean(raw.location, MAX.text),
       note: clean(raw.note, MAX.note),
-      spIds: Array.isArray(raw.spIds) ? [...new Set(raw.spIds.map((s2) => clean(s2, 40)).filter(Boolean))] : []
+      spIds: Array.isArray(raw.spIds) ? [...new Set(raw.spIds.map((s2) => clean(s2, 40)).filter(Boolean))] : [],
+      newSpNames: Array.isArray(raw.newSpNames) ? [...new Set(raw.newSpNames.map((s2) => clean(s2, MAX.name)).filter(Boolean))] : []
     };
     const e = {};
     if (!isValidDate(v.date)) e.date = "請選擇正確的演出日期";
@@ -123,8 +124,8 @@ var SPHub = (() => {
     if (!e.startTime && !e.endTime && diffMinutes(v.startTime, v.endTime) <= 0) e.endTime = "演出結束時間必須晚於開始時間";
     if (!e.checkinTime && !e.startTime && diffMinutes(v.checkinTime, v.startTime) < 0)
       e.checkinTime = "報到時間不可晚於演出開始時間";
-    if (!v.spIds.length) e.spIds = "請至少選擇一位 SP";
-    if (v.spIds.length > 50) e.spIds = "單場 SP 人數過多";
+    if (!v.spIds.length && !v.newSpNames.length) e.spIds = "請至少選擇或輸入一位 SP";
+    if (v.spIds.length + v.newSpNames.length > 50) e.spIds = "單場 SP 人數過多";
     fail(e);
     return v;
   }
@@ -454,9 +455,39 @@ var SPHub = (() => {
             const prev = repo.all("sessions").find((s2) => s2.requestId === reqId);
             if (prev) return { session: prev, replay: true };
           }
+          const allSps = repo.all("sps");
+          const toCreate = [];
+          for (const name of v.newSpNames) {
+            const same = allSps.filter((p) => p.name === name).sort((a, b) => (a.status === "active" ? -1 : 0) - (b.status === "active" ? -1 : 0));
+            const hit = same.find((p) => p.status !== "inactive") || same[0];
+            if (hit) {
+              if (!v.spIds.includes(hit.spId)) v.spIds.push(hit.spId);
+            } else toCreate.push(name);
+          }
           const warnings = detectWarnings(v, sessionId);
           if (warnings.length && !confirm) throw new AppError("NEEDS_CONFIRMATION", "偵測到可能的衝突或重複，請確認", { warnings });
           const now = env.nowIso(), actor = env.user();
+          const createdSps = toCreate.map((name) => ({
+            spId: id("SP"),
+            name,
+            phone: "",
+            email: "",
+            lineNote: "",
+            status: "active",
+            joinDate: "",
+            certification: "",
+            note: "",
+            createdAt: now,
+            createdBy: actor,
+            updatedAt: now,
+            updatedBy: actor,
+            version: 1
+          }));
+          if (createdSps.length) {
+            repo.insert("sps", createdSps);
+            for (const p of createdSps) audit("sp", p.spId, "create", null, p, "排程表單中直接新增");
+            v.spIds.push(...createdSps.map((p) => p.spId));
+          }
           const spMap = new Map(repo.all("sps").map((p) => [p.spId, p]));
           const newAssignment = (sid, spId) => ({
             assignmentId: id("A"),
@@ -524,6 +555,7 @@ var SPHub = (() => {
         const synced = written.session.syncStatus === "synced" ? written.session : syncCalendar(written.session.sessionId);
         return {
           sessions: [synced],
+          sps: repo.all("sps"),
           assignments: repo.all("assignments").filter((a) => a.sessionId === synced.sessionId),
           warnings: "warnings" in written ? written.warnings : [],
           settings: getSettings()

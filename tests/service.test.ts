@@ -138,6 +138,23 @@ describe('排程與 Sheets 資料結構', () => {
   });
 });
 
+describe('排程中直接輸入 SP 姓名', () => {
+  it('未建檔姓名自動建立 SP；同名既有 SP 沿用；同一天可有多場不同教案', () => {
+    const a = addSp('王小明');
+    const r = ok(svc.dispatch('session.save', { input: { ...input([]), newSpNames: ['郭志鴻', '王小明', '郭志鴻'] }, requestId: 'n-1' }));
+    expect(state.tables.sps.map((p) => p.name).sort()).toEqual(['王小明', '郭志鴻']);
+    expect(r.assignments).toHaveLength(2);
+    expect(r.assignments!.some((x) => x.spId === a.spId)).toBe(true);
+    expect(r.sps!.some((p) => p.name === '郭志鴻')).toBe(true);
+    // 同一天、不同教案、不同時段
+    ok(svc.dispatch('session.save', { input: { ...input([]), topic: '糖尿病衛教', checkinTime: '13:00', startTime: '13:30', endTime: '15:00', newSpNames: ['郭志鴻', '林小華'] }, requestId: 'n-2' }));
+    expect(state.tables.sessions).toHaveLength(2);
+    expect(state.tables.sps).toHaveLength(3);
+    // 沒有任何 SP 時仍需提示
+    expect(svc.dispatch('session.save', { input: { ...input([]), newSpNames: [] }, requestId: 'n-3' }).ok).toBe(false);
+  });
+});
+
 describe('衝突與重複偵測', () => {
   it('同一 SP 同時段排程衝突需確認', () => {
     const a = addSp('王小明');

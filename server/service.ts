@@ -200,9 +200,28 @@ export function createService({ repo, env, calendar }: Deps) {
           const prev = repo.all('sessions').find((s) => s.requestId === reqId);
           if (prev) return { session: prev, replay: true };
         }
+        // 直接輸入的姓名：已有同名 SP 就沿用（優先在職者），否則於儲存時建立新的 SP 主檔
+        const allSps = repo.all('sps');
+        const toCreate: string[] = [];
+        for (const name of v.newSpNames) {
+          const same = allSps.filter((p) => p.name === name).sort((a, b) => (a.status === 'active' ? -1 : 0) - (b.status === 'active' ? -1 : 0));
+          const hit = same.find((p) => p.status !== 'inactive') || same[0];
+          if (hit) {
+            if (!v.spIds.includes(hit.spId)) v.spIds.push(hit.spId);
+          } else toCreate.push(name);
+        }
         const warnings = detectWarnings(v, sessionId);
         if (warnings.length && !confirm) throw new AppError('NEEDS_CONFIRMATION', '偵測到可能的衝突或重複，請確認', { warnings });
         const now = env.nowIso(), actor = env.user();
+        const createdSps: SP[] = toCreate.map((name) => ({
+          spId: id('SP'), name, phone: '', email: '', lineNote: '', status: 'active', joinDate: '', certification: '', note: '',
+          createdAt: now, createdBy: actor, updatedAt: now, updatedBy: actor, version: 1,
+        }));
+        if (createdSps.length) {
+          repo.insert('sps', createdSps);
+          for (const p of createdSps) audit('sp', p.spId, 'create', null, p, '排程表單中直接新增');
+          v.spIds.push(...createdSps.map((p) => p.spId));
+        }
         const spMap = new Map(repo.all('sps').map((p) => [p.spId, p]));
         const newAssignment = (sid: string, spId: string): Assignment => ({
           assignmentId: id('A'), sessionId: sid, spId, spNameSnapshot: spMap.get(spId)!.name, attendance: 'pending', actualStart: '', actualEnd: '',
@@ -245,6 +264,7 @@ export function createService({ repo, env, calendar }: Deps) {
       const synced = written.session.syncStatus === 'synced' ? written.session : syncCalendar(written.session.sessionId);
       return {
         sessions: [synced],
+        sps: repo.all('sps'),
         assignments: repo.all('assignments').filter((a) => a.sessionId === synced.sessionId),
         warnings: 'warnings' in written ? written.warnings : [],
         settings: getSettings(),

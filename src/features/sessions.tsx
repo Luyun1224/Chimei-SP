@@ -10,7 +10,7 @@ import { ApiCallError, call, newRequestId } from '../lib/api';
 import { navigate } from '../lib/router';
 import { Drawer, Modal, useConfirm, useToast } from '../components/overlay';
 import { ATTENDANCE, Badge, Button, Field, NotifyBadge, SessionBadge, SyncBadge, cx } from '../components/ui';
-import { Combo, SpPicker } from '../components/pickers';
+import { Combo, SpPicker, isNewSp, NEW_SP_PREFIX } from '../components/pickers';
 
 type View = { kind: 'new'; prefill?: Partial<SessionInput> } | { kind: 'edit'; id: string } | { kind: 'detail'; id: string } | null;
 
@@ -87,9 +87,16 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
 
   const minutes = /^\d\d:\d\d$/.test(form.startTime) && /^\d\d:\d\d$/.test(form.endTime) ? diffMinutes(form.startTime, form.endTime) : 0;
 
+  /** 表單內的 'new:姓名' 轉為 newSpNames，其餘為既有 spIds */
+  const payload = (): SessionInput => ({
+    ...form,
+    spIds: form.spIds.filter((x) => !isNewSp(x)),
+    newSpNames: form.spIds.filter(isNewSp).map((x) => x.slice(NEW_SP_PREFIX.length)),
+  });
+
   async function submit(confirm = false) {
     try {
-      validateSessionInput(form);
+      validateSessionInput(payload());
     } catch (e) {
       if (e instanceof AppError) setErrors(((e.details as { fields: Record<string, string> })?.fields) || {});
       return;
@@ -98,7 +105,7 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
     try {
       const r = await mutate('session.save', {
         sessionId: editing?.sessionId,
-        input: form,
+        input: payload(),
         expectedVersion: editing?.version,
         requestId: reqId.current,
         confirm,
@@ -167,7 +174,7 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
             </Field>
             <p className="col-span-3 text-[12px] text-ink-3">報到時間與演出時間分開記錄；報到後準備時間不計入核定演出時數。</p>
           </div>
-          <Field label="SP 人員（可多選）" required error={errors.spIds} className="col-span-2" hint={busy.size ? '⚠ 標示者在此時段已有其他排程' : '輸入姓名即時搜尋，Enter 加入'}>
+          <Field label="SP 人員（可多位）" required error={errors.spIds} className="col-span-2" hint={busy.size ? '⚠ 標示者在此時段已有其他排程' : '可從名單選取，或直接輸入姓名按 Enter 新增；多位可用「、」分隔一次輸入'}>
             <SpPicker sps={snap.sps} value={form.spIds} onChange={(v) => set('spIds', v)} busy={busy} invalid={!!errors.spIds} />
           </Field>
           <Field label="備註" className="col-span-2">
