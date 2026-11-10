@@ -15,6 +15,13 @@ declare global {
   }
 }
 
+function takePrefetch(): Promise<string> | null {
+  const w = window as unknown as { __SP_BOOT?: Promise<string> };
+  const p = w.__SP_BOOT || null;
+  w.__SP_BOOT = undefined;
+  return p;
+}
+
 export const isGas = () => typeof window !== 'undefined' && !!window.google?.script?.run && import.meta.env.VITE_FORCE_DEMO !== 'true';
 
 export class ApiCallError extends Error {
@@ -38,7 +45,9 @@ function gasCall(action: string, payload: unknown): Promise<string> {
 export async function call<A extends ActionName>(action: A, payload: ApiActions[A]['req']): Promise<ApiActions[A]['res']> {
   let res: ApiResponse<ApiActions[A]['res']>;
   if (isGas()) {
-    res = JSON.parse(await gasCall(action, payload));
+    // 首次載入：使用頁面一開始就送出的預先請求，省下一次來回
+    const boot = action === 'bootstrap' ? takePrefetch() : null;
+    res = JSON.parse(boot ? await boot.catch(() => gasCall(action, payload)) : await gasCall(action, payload));
   } else if (isRemote()) {
     res = JSON.parse(await remoteCall(action, payload));
   } else {

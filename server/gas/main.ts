@@ -125,15 +125,26 @@ const DEFAULT_APP_BASE = 'https://luyun1224.github.io/Chimei-SP/app/';
 function appShell(): string {
   const base = (props().getProperty('APP_BASE_URL') || DEFAULT_APP_BASE).replace(/\/?$/, '/');
   if (!/^https:\/\/[\w.-]+\//.test(base)) throw new Error('APP_BASE_URL 必須是 https 網址');
-  // 每 10 分鐘換一次版本參數，避免瀏覽器長時間使用舊版前端
-  const v = Math.floor(Date.now() / 600000);
+  // 加速：
+  // 1) 頁面一開始就向伺服器要資料（與下載前端程式同時進行），不必等前端載入完才開始
+  // 2) 字型改為非阻塞載入，畫面不必等字型
+  // 3) 前端程式不加版本參數，瀏覽器可沿用快取（GitHub Pages 每 10 分鐘以 304 驗證更新）
   return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="${base}app.css?v=${v}">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="${base}app.css">
 <style>#boot{font-family:system-ui,"Noto Sans TC",sans-serif;color:#284A45;display:grid;place-items:center;min-height:90vh;background:#F7F4ED}</style>
+<script>
+  try {
+    window.__SP_BOOT = new Promise(function (resolve, reject) {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).api('bootstrap', '{}');
+    });
+    window.__SP_BOOT.catch(function () {});
+  } catch (e) {}
+</script>
 </head><body style="margin:0;background:#F7F4ED"><div id="root"><div id="boot">載入中…</div></div>
-<script src="${base}app.js?v=${v}" onerror="document.getElementById('boot').textContent='無法載入前端程式（${base}app.js），請確認網路可連線 GitHub Pages。'"></script>
+<script src="${base}app.js" onerror="document.getElementById('boot').textContent='無法載入前端程式（${base}app.js），請確認網路可連線 GitHub Pages。'"></script>
 </body></html>`;
 }
 

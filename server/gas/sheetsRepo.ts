@@ -111,9 +111,8 @@ export function createSheetsRepo(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): 
       const id = String((row as unknown as Record<string, unknown>)[idKey]);
       const i = L.ids.indexOf(id);
       if (i < 0) throw new AppError('NOT_FOUND', '找不到要更新的資料列：' + id);
-      const range = L.sheet.getRange(L.rowNumbers[i], 1, 1, L.header.length);
-      range.setNumberFormat('@');
-      range.setValues([toSheetRow(t, L.header, row)]);
+      // 既有資料列已是純文字格式，直接寫入（少一次 Sheets 呼叫）
+      L.sheet.getRange(L.rowNumbers[i], 1, 1, L.header.length).setValues([toSheetRow(t, L.header, row)]);
       L.rows[i] = { ...(row as unknown as Record<string, unknown>) };
     },
     getSettings() {

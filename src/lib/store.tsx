@@ -16,6 +16,8 @@ interface DataCtx {
   snap: Snapshot | null;
   d: Derived;
   loading: boolean;
+  /** 背景更新中（畫面先顯示快取資料） */
+  refreshing: boolean;
   error: ApiCallError | null;
   reload: () => Promise<void>;
   /** 呼叫寫入 API，成功後把回傳的實體局部合併進目前資料 */
@@ -41,7 +43,9 @@ function mergeBy<T>(list: T[], updates: T[] | undefined, key: keyof T): T[] {
 }
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [snap, setSnap] = useState<Snapshot | null>(null);
+  // 先顯示這台裝置上次的資料（立即開啟），背景再更新為最新資料
+  const [snap, setSnap] = useState<Snapshot | null>(() => readCache());
+  const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiCallError | null>(null);
   const inflight = useRef(new Set<string>());
@@ -50,16 +54,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
+      setRefreshing(true);
       const data = await call('bootstrap', {});
       setSnap(data);
+      writeCache(data);
       rememberLogin(data.user.email);
       notifyEntry('ready');
     } catch (e) {
       const err = e instanceof ApiCallError ? e : new ApiCallError({ code: 'INTERNAL', message: String(e) });
+      if (err.code === 'FORBIDDEN' || err.code === 'UNAUTHENTICATED') {
+        clearCache();
+        setSnap(null);
+      }
       setError(err);
       notifyEntry(err.code === 'UNAUTHENTICATED' ? 'auth-failed' : 'error');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -77,16 +88,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const res = await call(action, payload);
       const m = res as MutationResult;
       if (m && typeof m === 'object' && !Array.isArray(m)) {
-        setSnap((s) =>
-          s && {
+        setSnap((s) => {
+          const next = s && {
             ...s,
             sps: mergeBy(s.sps, m.sps, 'spId'),
             sessions: mergeBy(s.sessions, m.sessions, 'sessionId').filter((x) => !x.isDeleted),
             assignments: mergeBy(s.assignments, m.assignments, 'assignmentId'),
             notifications: m.notifications ? [...s.notifications, ...m.notifications] : s.notifications,
             settings: m.settings || s.settings,
-          },
-        );
+          };
+          if (next) writeCache(next);
+          return next;
+        });
       }
       return res;
     } catch (e) {
@@ -110,7 +123,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return { spMap, sessionMap, bySession, latestNotify: latestNotifications(snap?.notifications || []) };
   }, [snap]);
 
-  return <Ctx.Provider value={{ snap, d, loading, error, reload, mutate }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ snap, d, loading, refreshing, error, reload, mutate }}>{children}</Ctx.Provider>;
 }
 
 export function useData() {
@@ -131,4 +144,38 @@ export const spName = (d: Derived, a: Assignment) => d.spMap.get(a.spId)?.name |
 export function useCanEdit(): boolean {
   const { snap } = useData();
   return snap?.access !== 'public';
+}
+
+// ---------- 本機快取：只在正式模式（Apps Script／網址直開）使用，示範模式不快取 ----------
+const CACHE_KEY = 'sp-hub-snapshot-cache-v1';
+function cacheEnabled(): boolean {
+  try {
+    return typeof window !== 'undefined' && (!!window.google?.script?.run || !!window.SP_HUB_DIRECT);
+  } catch {
+    return false;
+  }
+}
+function readCache(): Snapshot | null {
+  if (!cacheEnabled()) return null;
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? (JSON.parse(raw) as Snapshot) : null;
+  } catch {
+    return null;
+  }
+}
+function writeCache(s: Snapshot) {
+  if (!cacheEnabled() || s.access === 'public') return;
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(s));
+  } catch {
+    /* 容量不足時略過 */
+  }
+}
+function clearCache() {
+  try {
+    localStorage.removeItem(CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
 }

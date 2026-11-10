@@ -61,7 +61,7 @@ function Brand() {
 }
 
 export function Layout({ route, children }: { route: Route; children: ReactNode }) {
-  const { snap } = useData();
+  const { snap, refreshing } = useData();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [route.path]);
   return (
@@ -127,6 +127,12 @@ export function Layout({ route, children }: { route: Route; children: ReactNode 
       {snap && snap.mode === 'gas' && (snap.apiVersion || 0) < API_VERSION && (
         <div role="alert" className="no-print border-b border-danger/30 bg-danger-50 px-4 py-2.5 text-center text-[13px] text-danger lg:px-10">
           <b>後端程式（Code.gs）版本較舊</b>，部分功能（例如同一場次多個教案）會無法儲存。請將最新的 Code.gs 貼到 Apps Script，並在「部署 → 管理部署作業 → 編輯 → 版本：新版本 → 部署」後重新整理。
+        </div>
+      )}
+      {refreshing && snap && (
+        <div role="status" className="no-print fixed right-4 top-4 z-40 flex items-center gap-2 rounded-full bg-white/90 px-3 py-1.5 text-[12px] text-ink-2 shadow-soft ring-1 ring-line backdrop-blur max-lg:top-auto max-lg:bottom-4">
+          <span className="inline-block size-3 animate-spin rounded-full border-2 border-sage border-t-pine" />
+          更新最新資料中…
         </div>
       )}
       <main className="mx-auto max-w-[1320px] px-4 py-7 sm:px-6 lg:px-10 lg:py-10">{children}</main>
