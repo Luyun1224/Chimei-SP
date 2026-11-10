@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SP Performance Hub｜奇美醫院臨床技能中心</title>
+  <meta name="robots" content="noindex" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600&display=swap" rel="stylesheet" />
+  <style>
+    :root { --cream:#F7F4ED; --pine:#284A45; --sage:#A8BCAF; --gold:#C6A77A; --gold6:#9A7B4E; --ink:#252B2D; --ink3:#6F7678; --line:#E4E0D5; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--cream); color:var(--ink);
+      font-family:Inter,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; padding:24px; }
+    main { width:100%; max-width:880px; display:grid; gap:16px; grid-template-columns:1.4fr 1fr; }
+    @media (max-width:760px) { main { grid-template-columns:1fr; } }
+    .hero { position:relative; overflow:hidden; background:var(--pine); color:#fff; border-radius:30px; padding:40px; }
+    .hero::after { content:""; position:absolute; right:-80px; top:-90px; width:300px; height:300px; border-radius:50%; background:rgba(168,188,175,.22); filter:blur(30px); }
+    .eyebrow { font-size:11px; font-weight:600; letter-spacing:.22em; text-transform:uppercase; color:var(--gold); }
+    h1 { font-family:"Noto Serif TC",serif; font-size:40px; line-height:1.15; margin:14px 0 8px; font-weight:600; }
+    p { line-height:1.75; margin:0; }
+    .hero p { color:rgba(255,255,255,.75); font-size:15px; }
+    .btn { position:relative; z-index:1; display:inline-flex; align-items:center; gap:8px; margin-top:28px; padding:13px 22px; border-radius:999px;
+      background:var(--gold); color:var(--ink); font-weight:600; text-decoration:none; transition:transform .2s, background .2s; }
+    .btn:hover { background:#bd9c6c; transform:translateY(-1px); }
+    .btn:focus-visible { outline:2px solid #fff; outline-offset:3px; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:26px; padding:28px; }
+    .card h2 { font-size:17px; margin:8px 0 10px; }
+    .card p { font-size:14px; color:var(--ink3); }
+    .card a { color:var(--pine); font-weight:600; }
+    .eyebrow.dark { color:var(--gold6); }
+    ul { margin:12px 0 0; padding-left:18px; color:var(--ink3); font-size:13px; line-height:1.8; }
+    footer { grid-column:1/-1; text-align:center; font-size:12px; color:var(--ink3); margin-top:6px; }
+    @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <div class="eyebrow">Chi Mei · Clinical Skills Center</div>
+      <h1>SP Performance Hub</h1>
+      <p>標準化病人演出歷程管理平台<br />排程同步 Google 日曆、LINE 人工提醒、演出核定與年度成果儀表板。</p>
+      <a class="btn" id="enter" target="_top" rel="noopener"
+         href="https://script.google.com/macros/s/AKfycbwVaaFH9s-UcBP6_WWGASIwsAWWa76lkgqUbkUVItl5dgFTIYZMf9B0oBzPmtkrdR8I/exec">進入系統 →</a>
+    </section>
+    <section class="card">
+      <div class="eyebrow dark">Access</div>
+      <h2>僅限授權管理員</h2>
+      <p>請以已加入管理員名單的 Google 帳號登入。未授權帳號會顯示「無存取權限」，看不到任何資料。</p>
+      <ul>
+        <li>資料存放於 Google 試算表（僅分享給管理員）</li>
+        <li>不會自動發送 LINE 或通知信給 SP</li>
+      </ul>
+      <p style="margin-top:16px">想先看看介面？<a href="./demo/">開啟示範版</a>（使用虛構資料，只存在您的瀏覽器，不連線 Google）。</p>
+    </section>
+    <footer>奇美醫院臨床技能中心 · SP Performance Hub</footer>
+  </main>
+</body>
+</html>
