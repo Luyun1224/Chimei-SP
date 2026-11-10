@@ -386,8 +386,10 @@ export function createService({ repo, env, calendar }: Deps) {
     'session.resyncAll': ({ limit }) => {
       if (!getSettings().calendarId) throw new AppError('NOT_CONFIGURED', '請先在系統設定填寫 Google 日曆 ID');
       const max = Math.min(Math.max(1, Number(limit) || 30), 60);
+      // 只處理今天以後的排程；過去（含歷史匯入）的場次不補排進日曆
+      const today = env.today();
       const todo = repo.all('sessions').filter((s) =>
-        !s.isDeleted && s.status !== 'cancelled' ? s.syncStatus !== 'synced' : s.syncStatus !== 'removed' && !!s.calendarEventId,
+        !s.isDeleted && s.status !== 'cancelled' ? s.syncStatus !== 'synced' && s.date >= today : s.syncStatus !== 'removed' && !!s.calendarEventId,
       );
       const done: Session[] = [];
       for (const s of todo.slice(0, max)) done.push(syncCalendar(s.sessionId));

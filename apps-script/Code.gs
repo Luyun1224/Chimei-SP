@@ -702,8 +702,9 @@ var SPHub = (() => {
       "session.resyncAll": ({ limit }) => {
         if (!getSettings().calendarId) throw new AppError("NOT_CONFIGURED", "請先在系統設定填寫 Google 日曆 ID");
         const max = Math.min(Math.max(1, Number(limit) || 30), 60);
+        const today = env.today();
         const todo = repo.all("sessions").filter(
-          (s2) => !s2.isDeleted && s2.status !== "cancelled" ? s2.syncStatus !== "synced" : s2.syncStatus !== "removed" && !!s2.calendarEventId
+          (s2) => !s2.isDeleted && s2.status !== "cancelled" ? s2.syncStatus !== "synced" && s2.date >= today : s2.syncStatus !== "removed" && !!s2.calendarEventId
         );
         const done = [];
         for (const s2 of todo.slice(0, max)) done.push(syncCalendar(s2.sessionId));

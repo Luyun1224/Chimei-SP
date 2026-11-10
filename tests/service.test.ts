@@ -195,6 +195,11 @@ describe('同一場次多個教案', () => {
     expect(r.remaining).toBe(0);
     expect(cal.events).toHaveLength(2);
     expect(ok(svc.dispatch('session.resyncAll', {})).synced).toBe(0); // 已同步者不重複建立
+    // 過去的排程（如歷史匯入）不補排
+    ok(svc.dispatch('settings.save', { patch: { calendarId: '' } }));
+    createSession([a.spId], { date: '2026-11-01', topic: '過去' });
+    ok(svc.dispatch('settings.save', { patch: { calendarId: 'primary' } }));
+    expect(ok(svc.dispatch('session.resyncAll', {})).synced).toBe(0);
     expect(cal.events).toHaveLength(2);
   });
 });

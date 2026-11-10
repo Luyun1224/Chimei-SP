@@ -20,7 +20,7 @@ export default function Settings() {
   const [busy, setBusy] = useState('');
   useEffect(() => setForm(snap.settings), [snap.settings]);
   const dirty = JSON.stringify(form) !== JSON.stringify(snap.settings);
-  const unsynced = snap.sessions.filter((x) => x.status !== 'cancelled' && x.syncStatus !== 'synced').length;
+  const unsynced = snap.sessions.filter((x) => x.status !== 'cancelled' && x.syncStatus !== 'synced' && x.date >= snap.today).length;
 
   const save = async () => {
     setSaving(true);
@@ -80,7 +80,7 @@ export default function Settings() {
               </Field>
             )}
             <div className="flex flex-wrap items-center gap-2 rounded-[14px] bg-mist/60 p-3">
-              <span className="mr-auto text-[13px] text-ink-2">已建立但尚未排入日曆的排程：<b className="num">{unsynced}</b> 筆</span>
+              <span className="mr-auto text-[13px] text-ink-2">今天以後、尚未排入日曆的排程：<b className="num">{unsynced}</b> 筆</span>
               <Button size="sm" variant="primary" loading={busy === 'syncAll'} disabled={!snap.settings.calendarId || !unsynced || dirty} onClick={() => action('syncAll', async () => {
                 let total = 0, failed = 0;
                 for (let round = 0; round < 20; round++) {
