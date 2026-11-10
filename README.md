@@ -7,6 +7,8 @@
 - **LINE 手動提醒輔助**：產生文案、一鍵複製、人工標記通知狀態（**不會**自動發送）
 - **年度成果儀表板**：只採計已完成且已核定的紀錄，並嚴格區分場次／人次／人時／SP 人數
 
+> **正式系統網址**：<https://script.google.com/macros/s/AKfycbwVaaFH9s-UcBP6_WWGASIwsAWWa76lkgqUbkUVItl5dgFTIYZMf9B0oBzPmtkrdR8I/exec>（限授權管理員以 Google 帳號登入）
+>
 > 部署步驟請見 **[docs/DEPLOY.md](docs/DEPLOY.md)**。
 
 ## 功能模組

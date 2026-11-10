@@ -4,6 +4,7 @@ import { BarChart3, BellRing, CalendarDays, ClipboardCheck, LayoutGrid, Menu, Se
 import { navigate, type Route } from '../lib/router';
 import { useData } from '../lib/store';
 import { cx } from './ui';
+import { WEB_APP_URL } from '../config';
 
 export const NAV = [
   { no: '01', path: '/overview', label: '總覽', en: 'Overview', icon: LayoutGrid },
@@ -108,6 +109,7 @@ export function Layout({ route, children }: { route: Route; children: ReactNode 
         <div className="no-print border-b border-gold/40 bg-gold-50 px-4 py-2 text-center text-[13px] text-gold-600 lg:px-10">
           <b>本機示範模式</b>：資料僅存於此瀏覽器、日曆同步為模擬，未連線 Google Sheets / Calendar。正式使用請依部署文件發佈至 Apps Script。
           <button className="ml-2 underline underline-offset-2" onClick={() => navigate('/settings')}>示範工具</button>
+          <a className="ml-3 font-semibold underline underline-offset-2" href={WEB_APP_URL} target="_top" rel="noopener">前往正式系統 →</a>
         </div>
       )}
       <main className="mx-auto max-w-[1320px] px-4 py-7 sm:px-6 lg:px-10 lg:py-10">{children}</main>

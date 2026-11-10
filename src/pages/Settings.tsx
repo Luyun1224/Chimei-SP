@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Activity, CalendarCog, DatabaseBackup, Download, FlaskConical, History, ListPlus, Save, X } from 'lucide-react';
+import { Activity, CalendarCog, Copy, ExternalLink, Link2, DatabaseBackup, Download, FlaskConical, History, ListPlus, Save, X } from 'lucide-react';
 import type { AuditEntry, HealthReport, Settings as S } from '../../shared/types';
 import { useSnap } from '../lib/store';
 import { call } from '../lib/api';
-import { download } from '../lib/csv';
+import { copyText, download } from '../lib/csv';
+import { WEB_APP_URL } from '../config';
 import { AuditList } from '../features/sessions';
 import { useConfirm, useToast } from '../components/overlay';
 import { Badge, Button, Card, CardHead, Field, PageHeader } from '../components/ui';
@@ -49,6 +50,15 @@ export default function Settings() {
   return (
     <div>
       <PageHeader no="07" en="Settings" title="系統設定" desc="Calendar、常用選項與資料維護。管理員帳號白名單與試算表 ID 存放於 Apps Script 的 Script Properties，不在前端顯示或修改。" />
+      <Card className="mb-4">
+        <CardHead eyebrow="Web App" title={<span className="flex items-center gap-2"><Link2 className="size-5 text-pine" />正式系統網址</span>} />
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded-[10px] bg-mist px-3 py-2 text-[13px]" title={WEB_APP_URL}>{WEB_APP_URL}</code>
+          <Button size="sm" icon={<Copy className="size-3.5" />} onClick={async () => { const ok = await copyText(WEB_APP_URL); toast(ok ? 'success' : 'error', ok ? '已複製網址' : '無法複製，請手動選取'); }}>複製網址</Button>
+          <a href={WEB_APP_URL} target="_top" rel="noopener" className="inline-flex h-8 items-center gap-1.5 rounded-full bg-pine px-3 text-[13px] font-medium text-white hover:bg-pine-700"><ExternalLink className="size-3.5" />開啟</a>
+        </div>
+        <p className="mt-2 text-[12px] text-ink-3">請只分享給 ADMIN_EMAILS 名單內的管理員；非授權帳號開啟會顯示「無存取權限」。建議加入瀏覽器書籤。</p>
+      </Card>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHead eyebrow="Google Calendar" title={<span className="flex items-center gap-2"><CalendarCog className="size-5 text-pine" />行事曆同步</span>} />
