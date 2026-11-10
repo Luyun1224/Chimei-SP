@@ -232,7 +232,13 @@ export interface ApiActions {
   bootstrap: { req: Record<string, never>; res: Snapshot };
   'sp.save': { req: { spId?: string; input: SpInput; expectedVersion?: number }; res: MutationResult };
   'session.save': {
-    req: { sessionId?: string; input: SessionInput; expectedVersion?: number; requestId: string; confirm?: boolean };
+    req: {
+      sessionId?: string; input: SessionInput; expectedVersion?: number; requestId: string; confirm?: boolean;
+      /** 新增時一併建立的其他日期（相同時間、教案與 SP） */
+      extraDates?: string[];
+      /** true：先寫入資料立即回應，日曆由前端在背景同步 */
+      deferSync?: boolean;
+    };
     res: MutationResult;
   };
   'session.cancel': { req: { sessionId: string; reason: string; expectedVersion: number }; res: MutationResult };

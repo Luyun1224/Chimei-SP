@@ -9,7 +9,7 @@ import { AppError, clean, validateSessionInput, validateSpInput, validateVerifyI
 import { topicOf } from '../shared/stats';
 import { API_VERSION } from '../shared/version';
 import { DEFAULT_SETTINGS, sessionFingerprint } from '../shared/template';
-import { diffMinutes, toMinutes, toZonedIso } from '../shared/time';
+import { diffMinutes, fmtDateShort, isValidDate, toMinutes, toZonedIso } from '../shared/time';
 import { computeStats } from '../shared/stats';
 import type { CalendarGateway, Env, Repo } from './ports';
 import type { TableName, RowTypes } from './schema';
@@ -202,16 +202,30 @@ export function createService({ repo, env, calendar }: Deps) {
       });
     },
 
-    'session.save': ({ sessionId, input, expectedVersion, requestId, confirm }) => {
+    'session.save': ({ sessionId, input, expectedVersion, requestId, confirm, extraDates, deferSync }) => {
       const v = validateSessionInput(input);
       const reqId = clean(requestId, 80);
+      // 新增時可一次建立多個日期（相同時間、教案與 SP）；修改時只處理單一排程
+      const dates = sessionId ? [v.date] : [...new Set([v.date, ...(Array.isArray(extraDates) ? extraDates : []).map((d) => clean(d, 10))])];
+      if (dates.length > 60) throw new AppError('VALIDATION', '一次最多建立 60 個日期');
+      const bad = dates.find((d) => !isValidDate(d));
+      if (bad) throw new AppError('VALIDATION', `日期格式不正確：${bad}`, { fields: { extraDates: `日期格式不正確：${bad}` } });
+      const reqFor = (date: string) => (date === v.date ? reqId : `${reqId}#${date}`);
+      const calendarOn = !!getSettings().calendarId;
+
       const written = env.withLock(() => {
         repo.refresh();
         // 冪等：同一個 requestId 重送（例如網路逾時重試）不會建立第二筆
+        const replayed = new Map<string, Session>();
         if (!sessionId && reqId) {
-          const prev = repo.all('sessions').find((s) => s.requestId === reqId);
-          if (prev) return { session: prev, replay: true };
+          for (const d of dates) {
+            const prev = repo.all('sessions').find((s) => s.requestId === reqFor(d));
+            if (prev) replayed.set(d, prev);
+          }
         }
+        const todo = dates.filter((d) => !replayed.has(d));
+        if (!todo.length) return { sessions: [...replayed.values()], warnings: [] as Warning[] };
+
         // 直接輸入的姓名：已有同名 SP 就沿用（優先在職者），否則於儲存時建立新的 SP 主檔
         const allSps = repo.all('sps');
         const toCreate = new Set<string>();
@@ -225,7 +239,14 @@ export function createService({ repo, env, calendar }: Deps) {
           }
         }
         v.spIds = [...new Set([...v.spIds, ...resolved.values()])];
-        const warnings = detectWarnings(v, sessionId);
+        const warnings: Warning[] = [];
+        for (const d of todo) {
+          for (const w of detectWarnings({ ...v, date: d }, sessionId)) {
+            // SP 狀態提醒只列一次；多日期時標示日期
+            if (w.type === 'sp_inactive' && warnings.some((x) => x.type === 'sp_inactive' && x.spId === w.spId)) continue;
+            warnings.push(todo.length > 1 && w.type !== 'sp_inactive' ? { ...w, message: `【${fmtDateShort(d)}】${w.message}` } : w);
+          }
+        }
         if (warnings.length && !confirm) throw new AppError('NEEDS_CONFIRMATION', '偵測到可能的衝突或重複，請確認', { warnings });
         const now = env.nowIso(), actor = env.user();
         const createdSps: SP[] = [...toCreate].map((name) => ({
@@ -254,17 +275,20 @@ export function createService({ repo, env, calendar }: Deps) {
         });
         const fields = { date: v.date, unit: v.unit, topic: v.topic, checkinTime: v.checkinTime, startTime: v.startTime, endTime: v.endTime, location: v.location, note: v.note };
         const auditCases = v.cases.map((c) => ({ topic: c.topic, sps: pairs.filter((p) => p.topic === c.topic).map((p) => spMap.get(p.spId)?.name) }));
+        const initialSync = calendarOn ? 'pending' : 'disabled';
 
         if (!sessionId) {
-          const s: Session = {
-            sessionId: id('S'), ...fields, status: 'scheduled', cancelReason: '', calendarEventId: '', syncStatus: 'pending', syncError: '', syncedAt: '',
-            isDeleted: false, deleteReason: '', requestId: reqId, createdAt: now, createdBy: actor, updatedAt: now, updatedBy: actor, version: 1,
-          };
-          repo.insert('sessions', [s]);
-          repo.insert('assignments', pairs.map((p) => newAssignment(s.sessionId, p.spId, p.topic)));
-          audit('session', s.sessionId, 'create', null, { ...s, cases: auditCases }, warnings.map((w) => w.message).join('；'));
+          const created: Session[] = todo.map((d) => ({
+            sessionId: id('S'), ...fields, date: d, status: 'scheduled', cancelReason: '', calendarEventId: '', syncStatus: initialSync, syncError: calendarOn ? '' : '尚未設定 Calendar ID', syncedAt: '',
+            isDeleted: false, deleteReason: '', requestId: reqFor(d), createdAt: now, createdBy: actor, updatedAt: now, updatedBy: actor, version: 1,
+          }));
+          repo.insert('sessions', created);
+          repo.insert('assignments', created.flatMap((s) => pairs.map((p) => newAssignment(s.sessionId, p.spId, p.topic))));
+          for (const s of created)
+            audit('session', s.sessionId, 'create', null, { ...s, cases: auditCases }, [created.length > 1 ? `一次建立 ${created.length} 個日期` : '', ...warnings.map((w) => w.message)].filter(Boolean).join('；'));
           rememberOptions(v);
-          return { session: s, warnings };
+          const all = dates.map((d) => replayed.get(d) || created.find((s) => s.date === d)!);
+          return { sessions: all, warnings };
         }
 
         const cur = find('sessions', sessionId);
@@ -283,19 +307,21 @@ export function createService({ repo, env, calendar }: Deps) {
         const have = new Set(existing.map(existingKey));
         const added = pairs.filter((p) => !have.has(keyOf(p))).map((p) => newAssignment(sessionId, p.spId, p.topic));
         if (added.length) repo.insert('assignments', added);
-        const next: Session = { ...cur, ...fields, syncStatus: 'pending', updatedAt: now, updatedBy: actor, version: cur.version + 1 };
+        const next: Session = { ...cur, ...fields, syncStatus: cur.calendarEventId || calendarOn ? 'pending' : 'disabled', updatedAt: now, updatedBy: actor, version: cur.version + 1 };
         repo.update('sessions', next);
         audit('session', sessionId, 'update', { ...cur, cases: existing.map((a) => ({ topic: topicOf(a, cur), sp: a.spNameSnapshot })) }, { ...next, cases: auditCases }, warnings.map((w) => w.message).join('；'));
         rememberOptions(v);
-        return { session: next, warnings };
+        return { sessions: [next], warnings };
       });
-      // 已存在的 requestId：若先前同步失敗則重試一次，但絕不重複建立
-      const synced = written.session.syncStatus === 'synced' ? written.session : syncCalendar(written.session.sessionId);
+
+      // 日曆同步：deferSync 時由前端在背景逐筆呼叫 session.resync，按鈕不必等待 Google 日曆回應
+      const result = written.sessions.map((s) => (deferSync || s.syncStatus === 'synced' || (s.syncStatus === 'disabled' && !calendarOn) ? s : syncCalendar(s.sessionId)));
+      const ids = new Set(result.map((s) => s.sessionId));
       return {
-        sessions: [synced],
+        sessions: result,
         sps: repo.all('sps'),
-        assignments: repo.all('assignments').filter((a) => a.sessionId === synced.sessionId),
-        warnings: 'warnings' in written ? written.warnings : [],
+        assignments: repo.all('assignments').filter((a) => ids.has(a.sessionId)),
+        warnings: written.warnings,
         settings: getSettings(),
       };
     },

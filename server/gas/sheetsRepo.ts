@@ -80,6 +80,18 @@ export function createSheetsRepo(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): 
     },
     insert(t, rows) {
       if (!rows.length) return;
+      // 只新增不讀取的表（異動紀錄、通知紀錄）：不載入整張表，只讀表頭後直接附加，加快儲存速度
+      if (!cache.has(t) && (t === 'audit' || t === 'notifications')) {
+        const def = TABLES[t] as unknown as TableDef<RowTypes[TableName]>;
+        const sheet = sheetOf(def.sheet, def.legacySheet);
+        const cols = Math.max(1, sheet.getLastColumn());
+        const header = sheet.getRange(1, 1, 1, cols).getValues()[0].map(String);
+        const data = rows.map((r) => toSheetRow(t, header, r));
+        const range = sheet.getRange(sheet.getLastRow() + 1, 1, data.length, header.length);
+        range.setNumberFormat('@');
+        range.setValues(data);
+        return;
+      }
       const L = load(t);
       const data = rows.map((r) => toSheetRow(t, L.header, r));
       const start = L.sheet.getLastRow() + 1;

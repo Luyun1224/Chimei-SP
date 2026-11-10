@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'motion/react';
-import { AlertTriangle, CalendarCheck2, CalendarPlus, CheckCheck, Clock, History, MapPin, Pencil, Plus, RefreshCw, Trash2, Users, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarCheck2, CalendarPlus, CheckCheck, Copy, Clock, History, MapPin, Pencil, Plus, RefreshCw, Trash2, Users, X, XCircle } from 'lucide-react';
 import type { Assignment, AuditEntry, Session, SessionInput, Warning } from '../../shared/types';
 import { AppError, validateSessionInput } from '../../shared/validate';
-import { addDays, diffMinutes, fmtDate, fmtDuration, toMinutes } from '../../shared/time';
+import { addDays, diffMinutes, fmtDate, fmtDateShort, fmtDuration, toMinutes } from '../../shared/time';
 import { notifyState } from '../../shared/template';
 import { topicOf } from '../../shared/stats';
 import { API_VERSION } from '../../shared/version';
@@ -14,9 +14,11 @@ import { Drawer, Modal, useConfirm, useToast } from '../components/overlay';
 import { ATTENDANCE, Badge, Button, Field, IconButton, NotifyBadge, SessionBadge, SyncBadge, cx } from '../components/ui';
 import { Combo, SpPicker, isNewSp, NEW_SP_PREFIX } from '../components/pickers';
 
-type View = { kind: 'new'; prefill?: Partial<SessionInput> } | { kind: 'edit'; id: string } | { kind: 'detail'; id: string } | null;
+/** 新增排程的預填：date 預設日期；copyFrom 從既有排程複製時間、地點、教案與 SP */
+export interface NewPrefill { date?: string; copyFrom?: string }
+type View = { kind: 'new'; prefill?: NewPrefill } | { kind: 'edit'; id: string } | { kind: 'detail'; id: string } | null;
 
-const Ctx = createContext<{ openNew: (p?: Partial<SessionInput>) => void; openDetail: (id: string) => void; openEdit: (id: string) => void }>({
+const Ctx = createContext<{ openNew: (p?: NewPrefill) => void; openDetail: (id: string) => void; openEdit: (id: string) => void }>({
   openNew: () => {},
   openDetail: () => {},
   openEdit: () => {},
@@ -28,7 +30,7 @@ export function SessionUIProvider({ children }: { children: ReactNode }) {
   const close = useCallback(() => setView(null), []);
   const api = useMemo(
     () => ({
-      openNew: (prefill?: Partial<SessionInput>) => setView({ kind: 'new', prefill }),
+      openNew: (prefill?: NewPrefill) => setView({ kind: 'new', prefill }),
       openDetail: (id: string) => setView({ kind: 'detail', id }),
       openEdit: (id: string) => setView({ kind: 'edit', id }),
     }),
@@ -38,19 +40,19 @@ export function SessionUIProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={api}>
       {children}
       <SessionFormDrawer view={view?.kind === 'new' || view?.kind === 'edit' ? view : null} onClose={close} onSaved={(id) => setView({ kind: 'detail', id })} />
-      <SessionDetailDrawer id={view?.kind === 'detail' ? view.id : null} onClose={close} onEdit={(id) => setView({ kind: 'edit', id })} />
+      <SessionDetailDrawer id={view?.kind === 'detail' ? view.id : null} onClose={close} onEdit={(id) => setView({ kind: 'edit', id })} onCopy={(id) => setView({ kind: 'new', prefill: { copyFrom: id } })} />
     </Ctx.Provider>
   );
 }
 
 // ======================= 表單 =======================
 interface CaseRow { key: string; topic: string; sps: string[] }
-interface FormState { date: string; unit: string; checkinTime: string; startTime: string; endTime: string; location: string; note: string; cases: CaseRow[] }
+interface FormState { date: string; extraDates: string[]; unit: string; checkinTime: string; startTime: string; endTime: string; location: string; note: string; cases: CaseRow[] }
 let caseSeq = 0;
 const newCase = (topic = '', sps: string[] = []): CaseRow => ({ key: `c${++caseSeq}`, topic, sps });
-const blank = (date?: string): FormState => ({ date: date || '', unit: '', checkinTime: '08:00', startTime: '08:30', endTime: '12:00', location: '', note: '', cases: [newCase()] });
+const blank = (date?: string): FormState => ({ date: date || '', extraDates: [], unit: '', checkinTime: '08:00', startTime: '08:30', endTime: '12:00', location: '', note: '', cases: [newCase()] });
 
-function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; prefill?: Partial<SessionInput> } | { kind: 'edit'; id: string } | null; onClose: () => void; onSaved: (id: string) => void }) {
+function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; prefill?: NewPrefill } | { kind: 'edit'; id: string } | null; onClose: () => void; onSaved: (id: string) => void }) {
   const { snap, d, mutate } = useData();
   const toast = useToast();
   const [form, setForm] = useState<FormState>(blank());
@@ -65,15 +67,22 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
     reqId.current = newRequestId(); // 每次開啟表單一個新的請求 ID，重送時沿用 → 後端冪等
     setErrors({});
     setWarnings(null);
-    if (view.kind === 'edit' && editing) {
+    const fromSession = (src: Session, date: string): FormState => {
       // 依教案分組既有 SP
       const groups = new Map<string, string[]>();
-      for (const a of d.bySession.get(editing.sessionId) || []) {
-        const t = topicOf(a, editing);
+      for (const a of d.bySession.get(src.sessionId) || []) {
+        if (a.attendance === 'cancelled' && src.status !== 'cancelled') continue;
+        const t = topicOf(a, src);
         groups.set(t, [...(groups.get(t) || []), a.spId]);
       }
       const cases = [...groups.entries()].map(([t, ids]) => newCase(t, ids));
-      setForm({ date: editing.date, unit: editing.unit, checkinTime: editing.checkinTime, startTime: editing.startTime, endTime: editing.endTime, location: editing.location, note: editing.note, cases: cases.length ? cases : [newCase(editing.topic)] });
+      return { date, extraDates: [], unit: src.unit, checkinTime: src.checkinTime, startTime: src.startTime, endTime: src.endTime, location: src.location, note: src.note, cases: cases.length ? cases : [newCase(src.topic)] };
+    };
+    const copySrc = view.kind === 'new' && view.prefill?.copyFrom ? d.sessionMap.get(view.prefill.copyFrom) : undefined;
+    if (view.kind === 'edit' && editing) {
+      setForm(fromSession(editing, editing.date));
+    } else if (copySrc) {
+      setForm(fromSession(copySrc, view.kind === 'new' && view.prefill?.date ? view.prefill.date : addDays(copySrc.date, 7)));
     } else if (view.kind === 'new') {
       setForm({ ...blank(view.prefill?.date || (snap?.today ? addDays(snap.today, 1) : '')) });
     }
@@ -117,6 +126,21 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
     })),
   });
 
+  /** 存檔後在背景逐筆同步日曆，按鈕不必等待 Google 日曆回應 */
+  async function syncInBackground(ids: string[]) {
+    let failed = 0;
+    for (const sid of ids) {
+      try {
+        const r = await mutate('session.resync', { sessionId: sid });
+        if (r.sessions?.[0].syncStatus === 'failed') failed++;
+      } catch {
+        failed++;
+      }
+    }
+    if (failed) toast('error', `${failed} 筆排程排入日曆失敗，可在排程詳情按「排入 Google 日曆」重試`);
+    else toast('success', ids.length > 1 ? `${ids.length} 筆排程已排入 Google 日曆` : '已排入 Google 日曆');
+  }
+
   async function submit(confirm = false) {
     try {
       validateSessionInput(payload());
@@ -136,14 +160,20 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
         expectedVersion: editing?.version,
         requestId: reqId.current,
         confirm,
+        extraDates: editing ? undefined : form.extraDates,
+        deferSync: true,
       });
-      const s = r.sessions![0];
+      const list = r.sessions || [];
+      const s = list[0];
       setWarnings(null);
-      if (s.syncStatus === 'synced') toast('success', editing ? '已更新排程，並同步更新 Google 日曆事件' : '已新增排程，並排入 Google 日曆');
-      else if (s.syncStatus === 'failed') toast('error', '排程已儲存，但日曆同步失敗，可於詳情中重試');
-      else if (s.syncStatus === 'disabled') toast('info', '排程已儲存。尚未設定 Google 日曆，請到「系統設定」啟用後即可排入日曆');
+      const what = editing ? '已更新排程' : list.length > 1 ? `已新增 ${list.length} 個日期的排程` : '已新增排程';
+      const pending = list.filter((x) => x.syncStatus === 'pending');
+      if (pending.length) toast('success', `${what}，正在背景排入 Google 日曆…`);
+      else if (s.syncStatus === 'disabled') toast('info', `${what}。尚未設定 Google 日曆，請到「系統設定」啟用後即可排入日曆`);
+      else toast('success', what);
       onSaved(s.sessionId);
-    } catch (e) {
+      if (pending.length) void syncInBackground(pending.map((x) => x.sessionId));
+        } catch (e) {
       if (e instanceof ApiCallError && e.code === 'NEEDS_CONFIRMATION') {
         setWarnings(((e.error.details as { warnings: Warning[] })?.warnings) || []);
       } else if (e instanceof ApiCallError && e.code === 'VALIDATION') {
@@ -172,7 +202,7 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
             <span className="mr-auto text-[12px] text-ink-3">{minutes > 0 && `預定演出 ${fmtDuration(minutes)} · ${form.cases.length} 個教案 · ${personTimes} 人次`}</span>
             <Button onClick={onClose}>取消</Button>
             <Button variant="primary" loading={saving} onClick={() => submit(false)} icon={<CalendarCheck2 className="size-4" />}>
-              {st.calendarId ? '儲存並排入日曆' : '儲存'}
+              {!editing && form.extraDates.length ? `儲存 ${form.extraDates.length + 1} 個日期` : st.calendarId ? '儲存並排入日曆' : '儲存'}
             </Button>
           </>
         }
@@ -184,6 +214,7 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
           <Field label="演出地點" required error={errors.location} className="col-span-2 sm:col-span-1">
             <Combo ariaLabel="演出地點" value={form.location} onChange={(v) => set('location', v)} options={st.locations} placeholder="例：技能中心 3F 第二考場" invalid={!!errors.location} quick={3} />
           </Field>
+          {!editing && <ExtraDates form={form} setForm={setForm} error={errors.extraDates} />}
           <Field label="申請單位" required error={errors.unit} className="col-span-2">
             <Combo ariaLabel="申請單位" value={form.unit} onChange={(v) => set('unit', v)} options={st.units} placeholder="例：醫學系 UGY" invalid={!!errors.unit} />
           </Field>
@@ -271,7 +302,7 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
 }
 
 // ======================= 詳情 =======================
-function SessionDetailDrawer({ id, onClose, onEdit }: { id: string | null; onClose: () => void; onEdit: (id: string) => void }) {
+function SessionDetailDrawer({ id, onClose, onEdit, onCopy }: { id: string | null; onClose: () => void; onEdit: (id: string) => void; onCopy: (id: string) => void }) {
   const { snap, d, mutate } = useData();
   const toast = useToast();
   const confirm = useConfirm();
@@ -334,6 +365,9 @@ function SessionDetailDrawer({ id, onClose, onEdit }: { id: string | null; onClo
                 標記已完成
               </Button>
             )}
+            <Button icon={<Copy className="size-4" />} onClick={() => onCopy(s.sessionId)} title="相同時間、地點、教案與 SP，排到其他日期">
+              複製到其他日期
+            </Button>
             <Button variant="primary" icon={<Pencil className="size-4" />} onClick={() => onEdit(s.sessionId)}>
               編輯
             </Button>
@@ -443,6 +477,44 @@ export function AuditList({ items }: { items: AuditEntry[] }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+/** 新增時「也排在這些日期」：相同時間、地點、教案與 SP，一次建立多個日期 */
+function ExtraDates({ form, setForm, error }: { form: FormState; setForm: (f: (x: FormState) => FormState) => void; error?: string }) {
+  const [pick, setPick] = useState('');
+  const all = [form.date, ...form.extraDates].filter(Boolean).sort();
+  const add = (d: string) => {
+    if (!d || d === form.date || form.extraDates.includes(d)) return;
+    setForm((f) => ({ ...f, extraDates: [...f.extraDates, d].sort() }));
+  };
+  const last = all[all.length - 1];
+  return (
+    <div className="col-span-2 rounded-[16px] border border-dashed border-line bg-white/60 p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="text-[13px] font-medium text-ink-2">也排在這些日期</span>
+        <span className="text-[12px] text-ink-3">（相同時間、地點、教案與 SP，只有日期不同）</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {form.date && <span className="inline-flex items-center rounded-full bg-pine px-2.5 py-0.5 text-[13px] text-white">{fmtDateShort(form.date)}</span>}
+        {form.extraDates.map((d) => (
+          <span key={d} className="inline-flex items-center gap-1 rounded-full bg-sage-200 py-0.5 pl-2.5 pr-1 text-[13px] text-pine">
+            {fmtDateShort(d)}
+            <button type="button" aria-label={`移除 ${d}`} className="rounded-full p-0.5 hover:bg-black/10" onClick={() => setForm((f) => ({ ...f, extraDates: f.extraDates.filter((x) => x !== d) }))}><X className="size-3" /></button>
+          </span>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <input type="date" className="field !w-auto !py-1.5" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="加入其他日期" />
+        <Button type="button" size="sm" onClick={() => { add(pick); setPick(''); }} disabled={!pick}>加入日期</Button>
+        {last && (
+          <Button type="button" size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => add(addDays(last, 7))}>
+            下週同一天（{fmtDateShort(addDays(last, 7))}）
+          </Button>
+        )}
+      </div>
+      {error && <p className="mt-1 text-[12px] text-danger">{error}</p>}
+    </div>
   );
 }
 

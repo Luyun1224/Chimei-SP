@@ -199,6 +199,35 @@ describe('同一場次多個教案', () => {
   });
 });
 
+describe('一次建立多個日期', () => {
+  it('相同時間、教案與 SP 建立多個日期；重送不重複；日曆各一個事件', () => {
+    const a = addSp('甲');
+    const req = { input: input([a.spId], { date: '2026-11-12' }), requestId: 'md-1', extraDates: ['2026-11-19', '2026-11-26', '2026-11-12'] };
+    const r = ok(svc.dispatch('session.save', req));
+    expect(r.sessions!.map((x) => x.date)).toEqual(['2026-11-12', '2026-11-19', '2026-11-26']);
+    expect(state.tables.sessions).toHaveLength(3);
+    expect(state.tables.assignments).toHaveLength(3);
+    expect(cal.events).toHaveLength(3);
+    ok(svc.dispatch('session.save', req));
+    expect(state.tables.sessions).toHaveLength(3);
+    expect(cal.events).toHaveLength(3);
+  });
+
+  it('多日期中有衝突時列出日期；deferSync 先寫入不同步，之後 resync', () => {
+    const a = addSp('甲');
+    createSession([a.spId], { date: '2026-11-19' });
+    const res = svc.dispatch('session.save', { input: input([a.spId], { date: '2026-11-12', topic: '另一個教案' }), requestId: 'md-2', extraDates: ['2026-11-19'] });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(JSON.stringify(res.error.details)).toContain('11/19');
+    const r = ok(svc.dispatch('session.save', { input: input([a.spId], { date: '2026-11-12', topic: '另一個教案' }), requestId: 'md-2', extraDates: ['2026-11-19'], confirm: true, deferSync: true }));
+    expect(r.sessions!.every((x) => x.syncStatus === 'pending')).toBe(true);
+    expect(cal.events).toHaveLength(1);
+    for (const x of r.sessions!) ok(svc.dispatch('session.resync', { sessionId: x.sessionId }));
+    expect(cal.events).toHaveLength(3);
+    expect(svc.dispatch('session.save', { input: input([a.spId]), requestId: 'md-3', extraDates: ['2026-13-01'] }).ok).toBe(false);
+  });
+});
+
 describe('衝突與重複偵測', () => {
   it('同一 SP 同時段排程衝突需確認', () => {
     const a = addSp('王小明');

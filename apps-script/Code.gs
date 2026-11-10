@@ -33,6 +33,7 @@ var SPHub = (() => {
   // shared/time.ts
   var TZ = "Asia/Taipei";
   var TZ_OFFSET = "+08:00";
+  var WEEK = ["日", "一", "二", "三", "四", "五", "六"];
   var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   var TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
   function isValidDate(s2) {
@@ -49,6 +50,13 @@ var SPHub = (() => {
   function diffMinutes(start, end) {
     return toMinutes(end) - toMinutes(start);
   }
+  function weekday(date) {
+    const [y, m, d] = date.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
+  }
+  function weekdayLabel(date) {
+    return WEEK[weekday(date)];
+  }
   function monthOf(date) {
     return Number(date.slice(5, 7));
   }
@@ -57,6 +65,10 @@ var SPHub = (() => {
   }
   function toZonedIso(date, time) {
     return `${date}T${time}:00${TZ_OFFSET}`;
+  }
+  function fmtDateShort(date) {
+    if (!date) return "";
+    return `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}（${weekdayLabel(date)}）`;
   }
 
   // shared/validate.ts
@@ -277,7 +289,7 @@ var SPHub = (() => {
   }
 
   // shared/version.ts
-  var API_VERSION = 3;
+  var API_VERSION = 4;
 
   // shared/template.ts
   var DEFAULT_INDIVIDUAL_TEMPLATE = `{SP姓名} 您好，提醒您{相對日}有標準化病人（SP）演出安排：
@@ -479,15 +491,26 @@ var SPHub = (() => {
           return { sps: [next] };
         });
       },
-      "session.save": ({ sessionId, input, expectedVersion, requestId, confirm }) => {
+      "session.save": ({ sessionId, input, expectedVersion, requestId, confirm, extraDates, deferSync }) => {
         const v = validateSessionInput(input);
         const reqId = clean(requestId, 80);
+        const dates = sessionId ? [v.date] : [.../* @__PURE__ */ new Set([v.date, ...(Array.isArray(extraDates) ? extraDates : []).map((d) => clean(d, 10))])];
+        if (dates.length > 60) throw new AppError("VALIDATION", "一次最多建立 60 個日期");
+        const bad = dates.find((d) => !isValidDate(d));
+        if (bad) throw new AppError("VALIDATION", `日期格式不正確：${bad}`, { fields: { extraDates: `日期格式不正確：${bad}` } });
+        const reqFor = (date) => date === v.date ? reqId : `${reqId}#${date}`;
+        const calendarOn = !!getSettings().calendarId;
         const written = env.withLock(() => {
           repo.refresh();
+          const replayed = /* @__PURE__ */ new Map();
           if (!sessionId && reqId) {
-            const prev = repo.all("sessions").find((s2) => s2.requestId === reqId);
-            if (prev) return { session: prev, replay: true };
+            for (const d of dates) {
+              const prev = repo.all("sessions").find((s2) => s2.requestId === reqFor(d));
+              if (prev) replayed.set(d, prev);
+            }
           }
+          const todo = dates.filter((d) => !replayed.has(d));
+          if (!todo.length) return { sessions: [...replayed.values()], warnings: [] };
           const allSps = repo.all("sps");
           const toCreate = /* @__PURE__ */ new Set();
           const resolved = /* @__PURE__ */ new Map();
@@ -500,7 +523,13 @@ var SPHub = (() => {
             }
           }
           v.spIds = [.../* @__PURE__ */ new Set([...v.spIds, ...resolved.values()])];
-          const warnings = detectWarnings(v, sessionId);
+          const warnings = [];
+          for (const d of todo) {
+            for (const w of detectWarnings({ ...v, date: d }, sessionId)) {
+              if (w.type === "sp_inactive" && warnings.some((x) => x.type === "sp_inactive" && x.spId === w.spId)) continue;
+              warnings.push(todo.length > 1 && w.type !== "sp_inactive" ? { ...w, message: `【${fmtDateShort(d)}】${w.message}` } : w);
+            }
+          }
           if (warnings.length && !confirm) throw new AppError("NEEDS_CONFIRMATION", "偵測到可能的衝突或重複，請確認", { warnings });
           const now = env.nowIso(), actor = env.user();
           const createdSps = [...toCreate].map((name) => ({
@@ -528,8 +557,8 @@ var SPHub = (() => {
           }
           const pairs = [];
           for (const c of v.cases) {
-            const ids = [...c.spIds, ...c.newSpNames.map((n) => resolved.get(n))];
-            for (const spId of new Set(ids)) pairs.push({ topic: c.topic, spId });
+            const ids2 = [...c.spIds, ...c.newSpNames.map((n) => resolved.get(n))];
+            for (const spId of new Set(ids2)) pairs.push({ topic: c.topic, spId });
           }
           const keyOf = (x) => `${x.spId}|${x.topic}`;
           const spMap = new Map(repo.all("sps").map((p) => [p.spId, p]));
@@ -558,30 +587,34 @@ var SPHub = (() => {
             var _a;
             return (_a = spMap.get(p.spId)) == null ? void 0 : _a.name;
           }) }));
+          const initialSync = calendarOn ? "pending" : "disabled";
           if (!sessionId) {
-            const s2 = {
+            const created = todo.map((d) => ({
               sessionId: id("S"),
               ...fields,
+              date: d,
               status: "scheduled",
               cancelReason: "",
               calendarEventId: "",
-              syncStatus: "pending",
-              syncError: "",
+              syncStatus: initialSync,
+              syncError: calendarOn ? "" : "尚未設定 Calendar ID",
               syncedAt: "",
               isDeleted: false,
               deleteReason: "",
-              requestId: reqId,
+              requestId: reqFor(d),
               createdAt: now,
               createdBy: actor,
               updatedAt: now,
               updatedBy: actor,
               version: 1
-            };
-            repo.insert("sessions", [s2]);
-            repo.insert("assignments", pairs.map((p) => newAssignment(s2.sessionId, p.spId, p.topic)));
-            audit("session", s2.sessionId, "create", null, { ...s2, cases: auditCases }, warnings.map((w) => w.message).join("；"));
+            }));
+            repo.insert("sessions", created);
+            repo.insert("assignments", created.flatMap((s2) => pairs.map((p) => newAssignment(s2.sessionId, p.spId, p.topic))));
+            for (const s2 of created)
+              audit("session", s2.sessionId, "create", null, { ...s2, cases: auditCases }, [created.length > 1 ? `一次建立 ${created.length} 個日期` : "", ...warnings.map((w) => w.message)].filter(Boolean).join("；"));
             rememberOptions(v);
-            return { session: s2, warnings };
+            const all = dates.map((d) => replayed.get(d) || created.find((s2) => s2.date === d));
+            return { sessions: all, warnings };
           }
           const cur = find("sessions", sessionId);
           if (cur.isDeleted) throw new AppError("STATE", "此排程已刪除");
@@ -598,18 +631,19 @@ var SPHub = (() => {
           const have = new Set(existing.map(existingKey));
           const added = pairs.filter((p) => !have.has(keyOf(p))).map((p) => newAssignment(sessionId, p.spId, p.topic));
           if (added.length) repo.insert("assignments", added);
-          const next = { ...cur, ...fields, syncStatus: "pending", updatedAt: now, updatedBy: actor, version: cur.version + 1 };
+          const next = { ...cur, ...fields, syncStatus: cur.calendarEventId || calendarOn ? "pending" : "disabled", updatedAt: now, updatedBy: actor, version: cur.version + 1 };
           repo.update("sessions", next);
           audit("session", sessionId, "update", { ...cur, cases: existing.map((a) => ({ topic: topicOf(a, cur), sp: a.spNameSnapshot })) }, { ...next, cases: auditCases }, warnings.map((w) => w.message).join("；"));
           rememberOptions(v);
-          return { session: next, warnings };
+          return { sessions: [next], warnings };
         });
-        const synced = written.session.syncStatus === "synced" ? written.session : syncCalendar(written.session.sessionId);
+        const result = written.sessions.map((s2) => deferSync || s2.syncStatus === "synced" || s2.syncStatus === "disabled" && !calendarOn ? s2 : syncCalendar(s2.sessionId));
+        const ids = new Set(result.map((s2) => s2.sessionId));
         return {
-          sessions: [synced],
+          sessions: result,
           sps: repo.all("sps"),
-          assignments: repo.all("assignments").filter((a) => a.sessionId === synced.sessionId),
-          warnings: "warnings" in written ? written.warnings : [],
+          assignments: repo.all("assignments").filter((a) => ids.has(a.sessionId)),
+          warnings: written.warnings,
           settings: getSettings()
         };
       },
@@ -1103,6 +1137,17 @@ var SPHub = (() => {
       },
       insert(t, rows) {
         if (!rows.length) return;
+        if (!cache.has(t) && (t === "audit" || t === "notifications")) {
+          const def = TABLES[t];
+          const sheet = sheetOf(def.sheet, def.legacySheet);
+          const cols = Math.max(1, sheet.getLastColumn());
+          const header = sheet.getRange(1, 1, 1, cols).getValues()[0].map(String);
+          const data2 = rows.map((r) => toSheetRow(t, header, r));
+          const range2 = sheet.getRange(sheet.getLastRow() + 1, 1, data2.length, header.length);
+          range2.setNumberFormat("@");
+          range2.setValues(data2);
+          return;
+        }
         const L = load(t);
         const data = rows.map((r) => toSheetRow(t, L.header, r));
         const start = L.sheet.getLastRow() + 1;

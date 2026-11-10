@@ -16,6 +16,7 @@ class FakeSheet {
   setName(n: string) { this.book.sheets.delete(this.name); this.name = n; this.book.sheets.set(n, this); return this; }
   getDataRange() { return { getValues: () => this.rows.map((r) => [...r]) }; }
   getLastRow() { return this.rows.length; }
+  getLastColumn() { return Math.max(0, ...this.rows.map((r) => r.length)); }
   getMaxRows() { return Math.max(1000, this.rows.length); }
   clearContents() { this.rows = []; }
   setFrozenRows() {}
@@ -23,6 +24,7 @@ class FakeSheet {
   getProtections() { return []; }
   getRange(r: number, c: number, nr = 1, nc = 1) {
     const range = {
+      getValues: () => this.rows.slice(r - 1, r - 1 + nr).map((row) => Array.from({ length: nc }, (_, j) => row[c - 1 + j] ?? '')),
       setNumberFormat: () => range, setFontWeight: () => range, setBackground: () => range, setFontColor: () => range,
       protect: () => ({ setDescription: () => ({ setWarningOnly: () => {} }) }),
       setValues: (vals: unknown[][]) => {
