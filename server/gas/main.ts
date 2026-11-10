@@ -102,6 +102,24 @@ function buildEnv(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): Env {
 
 // ---------------- Web App ----------------
 
+/** 前端程式（app.js / app.css）放在 GitHub Pages；可用 Script Property APP_BASE_URL 覆寫 */
+const DEFAULT_APP_BASE = 'https://luyun1224.github.io/Chimei-SP/app/';
+
+function appShell(): string {
+  const base = (props().getProperty('APP_BASE_URL') || DEFAULT_APP_BASE).replace(/\/?$/, '/');
+  if (!/^https:\/\/[\w.-]+\//.test(base)) throw new Error('APP_BASE_URL 必須是 https 網址');
+  // 每 10 分鐘換一次版本參數，避免瀏覽器長時間使用舊版前端
+  const v = Math.floor(Date.now() / 600000);
+  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="${base}app.css?v=${v}">
+<style>#boot{font-family:system-ui,"Noto Sans TC",sans-serif;color:#284A45;display:grid;place-items:center;min-height:90vh;background:#F7F4ED}</style>
+</head><body style="margin:0;background:#F7F4ED"><div id="root"><div id="boot">載入中…</div></div>
+<script src="${base}app.js?v=${v}" onerror="document.getElementById('boot').textContent='無法載入前端程式（${base}app.js），請確認網路可連線 GitHub Pages。'"></script>
+</body></html>`;
+}
+
 export function doGet() {
   const email = currentEmail();
   if (!email || !adminList().includes(email)) {
@@ -116,7 +134,7 @@ export function doGet() {
     t.email = email || '（無法取得，請確認已登入 Google 帳號）';
     return t.evaluate().setTitle('SP Performance Hub｜無存取權限');
   }
-  return HtmlService.createHtmlOutputFromFile('index')
+  return HtmlService.createHtmlOutput(appShell())
     .setTitle('SP Performance Hub｜標準化病人演出歷程管理平台')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);

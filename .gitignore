@@ -9,3 +9,4 @@ gas/index.html
 !.env.example
 *.log
 test-results/
+dist-app/

@@ -66,10 +66,10 @@ cp .clasp.json.example .clasp.json
 npm run push
 ```
 
-此指令會：
-1. 把 React 前端打包成單一 `gas/index.html`；
-2. 把伺服器程式打包成 `gas/Code.js`；
-3. 連同 `gas/appsscript.json` 一起推送到 Apps Script 專案。
+此指令會把伺服器程式打包成 `gas/Code.js`，連同 `gas/appsscript.json` 推送到 Apps Script 專案。
+前端畫面（app.js / app.css）由 GitHub Pages 的 `/app/` 提供，Apps Script 專案中**不需要 index.html**；`doGet` 只回傳一段載入前端的 HTML。
+
+> 不想安裝工具：直接把 `apps-script/Code.gs` 與 `apps-script/appsscript.json` 貼到 Apps Script 編輯器即可。
 
 > 若出現 “User has not enabled the Apps Script API”，請到 <https://script.google.com/home/usersettings> 開啟「Google Apps Script API」後重試。
 

@@ -27,11 +27,15 @@ jobs:
       - run: npm test
       - name: Build demo (no Google connection)
         run: npx vite build
+      - name: Build app for Apps Script (loaded by doGet)
+        run: npx vite build -c vite.remote.config.ts
       - name: Assemble site
         run: |
           mkdir -p site/demo
           cp pages/index.html site/index.html
           cp dist/index.html site/demo/index.html
+          mkdir -p site/app
+          cp dist-app/app.js dist-app/app.css site/app/
           touch site/.nojekyll
       - uses: actions/configure-pages@v5
         with:

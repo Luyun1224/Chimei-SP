@@ -1,12 +1,14 @@
-# Apps Script 貼上版（不用安裝任何工具）
+# Apps Script 貼上版（只需要 Code.gs，不需要 index.html）
 
-這個資料夾是已經編譯好的 Apps Script 檔案，可直接複製貼到 Apps Script 編輯器。
-（由 `npm run build` 產生；原始碼在 `server/` 與 `src/`，修改後請重新建置再貼上。）
+前端畫面（app.js / app.css）部署在 GitHub Pages：<https://luyun1224.github.io/Chimei-SP/app/>。
+Apps Script 的 `doGet` 只回傳一小段 HTML 去載入它們，因此 Apps Script 專案中**不需要 index.html**。
+頁面仍由 Apps Script 提供，資料讀寫照常以管理員本人的 Google 身分透過 `google.script.run` 執行，安全模型不變。
 
 | 檔案 | 在 Apps Script 編輯器中 |
 |---|---|
-| `Code.gs` | 貼到預設的 `程式碼.gs`（Code.gs），取代全部內容 |
-| `index.html` | 按「＋」→ **HTML**，檔名輸入 `index`（不要加 .html），貼上全部內容 |
-| `appsscript.json` | 專案設定 → 勾選「在編輯器中顯示 appsscript.json」→ 開啟 appsscript.json，取代全部內容 |
+| `Code.gs` | 貼到「程式碼.gs」，取代全部內容 |
+| `appsscript.json` | 專案設定 → 勾選「在編輯器中顯示 appsscript.json」→ 取代全部內容 |
 
-接著依照 `docs/DEPLOY.md` 第 3 步之後操作：執行 `setupSpreadsheet` → 設定 `ADMIN_EMAILS` → 設定 Calendar ID → 部署為網頁應用程式。
+- 之後修改畫面：推送到 GitHub 即自動更新，**不必**重貼 Apps Script（最多約 10 分鐘生效）。
+- 修改後端（server/）：執行 `npm run build` 後重貼 `Code.gs`，並在「管理部署作業」發佈新版本。
+- 若要改用其他網址提供前端：在 Script Properties 設定 `APP_BASE_URL`（必須是 https）。

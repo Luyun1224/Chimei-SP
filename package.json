@@ -9,8 +9,9 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
     "build:web": "vite build",
+    "build:app": "vite build -c vite.remote.config.ts",
     "build:gas": "node scripts/build-gas.mjs",
-    "build": "npm run build:web && npm run build:gas",
+    "build": "npm run build:app && npm run build:gas",
     "push": "npm run build && clasp push --force",
     "deploy": "npm run push && clasp deploy --description \"SP Performance Hub\""
   },
