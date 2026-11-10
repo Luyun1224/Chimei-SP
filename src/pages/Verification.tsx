@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { CheckCheck, ClipboardCheck, Search, ShieldCheck, Undo2 } from 'lucide-react';
 import type { Assignment, Attendance, Session } from '../../shared/types';
-import { needsVerification } from '../../shared/stats';
+import { needsVerification, topicOf } from '../../shared/stats';
 import { diffMinutes, fmtDate, fmtDuration, isValidTime } from '../../shared/time';
 import { useSnap, spName } from '../lib/store';
 import { navigate, type Route } from '../lib/router';
@@ -195,6 +195,7 @@ function AssignmentRow({ a, s }: { a: Assignment; s: Session }) {
     <motion.div layout className="px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <button className="text-[15px] font-semibold text-pine hover:underline" onClick={() => navigate(`/sps/${a.spId}`)}>{spName(d, a)}</button>
+        <span className="text-[13px] text-ink-2">· {topicOf(a, s)}</span>
         {isVerified ? (
           <>
             <Badge tone={ATTENDANCE[a.attendance].tone}>{ATTENDANCE[a.attendance].label}</Badge>

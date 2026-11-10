@@ -2,10 +2,11 @@
  * 業務邏輯（與執行環境無關）。Apps Script 與本機示範模式共用同一份程式，確保行為一致、可單元測試。
  */
 import type {
-  ActionName, ApiActions, ApiResponse, Assignment, AuditEntry, NotificationEntry, SP, Session, SessionInput,
+  ActionName, ApiActions, ApiResponse, Assignment, AuditEntry, NotificationEntry, SP, Session,
   Settings, Warning,
 } from '../shared/types';
-import { AppError, clean, validateSessionInput, validateSpInput, validateVerifyInput } from '../shared/validate';
+import { AppError, clean, validateSessionInput, validateSpInput, validateVerifyInput, type NormalizedSession } from '../shared/validate';
+import { topicOf } from '../shared/stats';
 import { DEFAULT_SETTINGS, sessionFingerprint } from '../shared/template';
 import { diffMinutes, toMinutes, toZonedIso } from '../shared/time';
 import { computeStats } from '../shared/stats';
@@ -56,14 +57,17 @@ export function createService({ repo, env, calendar }: Deps) {
   }
 
   /** 自動把新的單位／教案／地點加入常用選項 */
-  function rememberOptions(input: SessionInput) {
+  function rememberOptions(input: NormalizedSession) {
     const st = getSettings();
     const patch: Record<string, string> = {};
     const add = (key: 'units' | 'topics' | 'locations', v: string) => {
-      if (v && !st[key].includes(v)) patch[key] = JSON.stringify([...st[key], v].slice(-300));
+      if (v && !st[key].includes(v)) {
+        st[key] = [...st[key], v].slice(-300);
+        patch[key] = JSON.stringify(st[key]);
+      }
     };
     add('units', input.unit);
-    add('topics', input.topic);
+    for (const c of input.cases) add('topics', c.topic);
     add('locations', input.location);
     if (Object.keys(patch).length) repo.setSettings(patch);
   }
@@ -71,7 +75,7 @@ export function createService({ repo, env, calendar }: Deps) {
   const liveAssignmentsOf = (sessionId: string) => repo.all('assignments').filter((a) => a.sessionId === sessionId && !a.isDeleted);
 
   // ---------- 衝突／重複偵測 ----------
-  function detectWarnings(input: SessionInput, selfId?: string): Warning[] {
+  function detectWarnings(input: NormalizedSession, selfId?: string): Warning[] {
     const warnings: Warning[] = [];
     const sps = new Map(repo.all('sps').map((p) => [p.spId, p]));
     const others = repo.all('sessions').filter((s) => s.sessionId !== selfId && !s.isDeleted && s.status !== 'cancelled' && s.date === input.date);
@@ -98,8 +102,14 @@ export function createService({ repo, env, calendar }: Deps) {
 
   // ---------- Calendar 同步（在鎖外呼叫 Google API，結果再於鎖內寫回） ----------
   function buildEvent(s: Session) {
-    const names = liveAssignmentsOf(s.sessionId).filter((a) => a.attendance !== 'cancelled').map((a) => a.spNameSnapshot);
+    const live = liveAssignmentsOf(s.sessionId).filter((a) => a.attendance !== 'cancelled');
+    const byTopic = new Map<string, string[]>();
+    for (const a of live) {
+      const t = topicOf(a, s);
+      byTopic.set(t, [...(byTopic.get(t) || []), a.spNameSnapshot]);
+    }
     const st = getSettings();
+    const caseLines = [...byTopic.entries()].map(([t, names]) => `・${t}：${names.join('、')}`);
     return {
       sessionId: s.sessionId,
       title: `【SP演出】${s.topic}｜${s.unit}`,
@@ -109,12 +119,12 @@ export function createService({ repo, env, calendar }: Deps) {
       date: s.date,
       reminderMinutes: st.adminReminderEnabled ? st.adminReminderMinutes : null,
       description: [
-        `SP：${names.join('、') || '（未指派）'}`,
         `報到時間：${s.checkinTime}`,
         `演出時間：${s.startTime}–${s.endTime}`,
-        `教案主題：${s.topic}`,
         `申請單位：${s.unit}`,
         `演出地點：${s.location}`,
+        `教案與 SP（共 ${live.length} 人次）：`,
+        ...(caseLines.length ? caseLines : ['（未指派）']),
         s.note ? `備註：${s.note}` : '',
         '',
         `系統排程 ID：${s.sessionId}`,
@@ -202,43 +212,55 @@ export function createService({ repo, env, calendar }: Deps) {
         }
         // 直接輸入的姓名：已有同名 SP 就沿用（優先在職者），否則於儲存時建立新的 SP 主檔
         const allSps = repo.all('sps');
-        const toCreate: string[] = [];
-        for (const name of v.newSpNames) {
-          const same = allSps.filter((p) => p.name === name).sort((a, b) => (a.status === 'active' ? -1 : 0) - (b.status === 'active' ? -1 : 0));
-          const hit = same.find((p) => p.status !== 'inactive') || same[0];
-          if (hit) {
-            if (!v.spIds.includes(hit.spId)) v.spIds.push(hit.spId);
-          } else toCreate.push(name);
+        const toCreate = new Set<string>();
+        const resolved = new Map<string, string>(); // 姓名 → 既有 spId
+        for (const c of v.cases) {
+          for (const name of c.newSpNames) {
+            const same = allSps.filter((p) => p.name === name).sort((a, b) => (a.status === 'active' ? -1 : 0) - (b.status === 'active' ? -1 : 0));
+            const hit = same.find((p) => p.status !== 'inactive') || same[0];
+            if (hit) resolved.set(name, hit.spId);
+            else toCreate.add(name);
+          }
         }
+        v.spIds = [...new Set([...v.spIds, ...resolved.values()])];
         const warnings = detectWarnings(v, sessionId);
         if (warnings.length && !confirm) throw new AppError('NEEDS_CONFIRMATION', '偵測到可能的衝突或重複，請確認', { warnings });
         const now = env.nowIso(), actor = env.user();
-        const createdSps: SP[] = toCreate.map((name) => ({
+        const createdSps: SP[] = [...toCreate].map((name) => ({
           spId: id('SP'), name, phone: '', email: '', lineNote: '', status: 'active', joinDate: '', certification: '', note: '',
           createdAt: now, createdBy: actor, updatedAt: now, updatedBy: actor, version: 1,
         }));
         if (createdSps.length) {
           repo.insert('sps', createdSps);
-          for (const p of createdSps) audit('sp', p.spId, 'create', null, p, '排程表單中直接新增');
-          v.spIds.push(...createdSps.map((p) => p.spId));
+          for (const p of createdSps) {
+            audit('sp', p.spId, 'create', null, p, '排程表單中直接新增');
+            resolved.set(p.name, p.spId);
+          }
         }
+        // 展開為（教案, SP）組合；同一位 SP 可在同一場次演出不同教案
+        const pairs: { topic: string; spId: string }[] = [];
+        for (const c of v.cases) {
+          const ids = [...c.spIds, ...c.newSpNames.map((n) => resolved.get(n)!)];
+          for (const spId of new Set(ids)) pairs.push({ topic: c.topic, spId });
+        }
+        const keyOf = (x: { topic: string; spId: string }) => `${x.spId}|${x.topic}`;
         const spMap = new Map(repo.all('sps').map((p) => [p.spId, p]));
-        const newAssignment = (sid: string, spId: string): Assignment => ({
-          assignmentId: id('A'), sessionId: sid, spId, spNameSnapshot: spMap.get(spId)!.name, attendance: 'pending', actualStart: '', actualEnd: '',
+        const newAssignment = (sid: string, spId: string, topic: string): Assignment => ({
+          assignmentId: id('A'), sessionId: sid, spId, spNameSnapshot: spMap.get(spId)!.name, topic, attendance: 'pending', actualStart: '', actualEnd: '',
           approvedMinutes: null, minutesNote: '', verifyStatus: 'unverified', verifiedBy: '', verifiedAt: '', isDeleted: false,
           createdAt: now, updatedAt: now, updatedBy: actor, version: 1,
         });
         const fields = { date: v.date, unit: v.unit, topic: v.topic, checkinTime: v.checkinTime, startTime: v.startTime, endTime: v.endTime, location: v.location, note: v.note };
+        const auditCases = v.cases.map((c) => ({ topic: c.topic, sps: pairs.filter((p) => p.topic === c.topic).map((p) => spMap.get(p.spId)?.name) }));
 
         if (!sessionId) {
           const s: Session = {
             sessionId: id('S'), ...fields, status: 'scheduled', cancelReason: '', calendarEventId: '', syncStatus: 'pending', syncError: '', syncedAt: '',
             isDeleted: false, deleteReason: '', requestId: reqId, createdAt: now, createdBy: actor, updatedAt: now, updatedBy: actor, version: 1,
           };
-          const as = v.spIds.map((spId) => newAssignment(s.sessionId, spId));
           repo.insert('sessions', [s]);
-          repo.insert('assignments', as);
-          audit('session', s.sessionId, 'create', null, { ...s, spIds: v.spIds }, warnings.map((w) => w.message).join('；'));
+          repo.insert('assignments', pairs.map((p) => newAssignment(s.sessionId, p.spId, p.topic)));
+          audit('session', s.sessionId, 'create', null, { ...s, cases: auditCases }, warnings.map((w) => w.message).join('；'));
           rememberOptions(v);
           return { session: s, warnings };
         }
@@ -248,15 +270,20 @@ export function createService({ repo, env, calendar }: Deps) {
         if (cur.status === 'cancelled') throw new AppError('STATE', '已取消的排程不可修改');
         checkVersion(cur, expectedVersion);
         const existing = liveAssignmentsOf(sessionId);
-        const removed = existing.filter((a) => !v.spIds.includes(a.spId));
+        const wanted = new Set(pairs.map(keyOf));
+        const existingKey = (a: Assignment) => keyOf({ spId: a.spId, topic: topicOf(a, cur) });
+        const removed = existing.filter((a) => !wanted.has(existingKey(a)));
         const locked = removed.filter((a) => a.verifyStatus === 'verified');
-        if (locked.length) throw new AppError('STATE', `${locked.map((a) => a.spNameSnapshot).join('、')} 已完成時數核定，請先在「演出核定」取消核定後再移除`);
+        if (locked.length) throw new AppError('STATE', `${locked.map((a) => a.spNameSnapshot).join('、')} 已完成時數核定，請先在「演出核定」取消核定後再移除或更換教案`);
         for (const a of removed) repo.update('assignments', { ...a, isDeleted: true, updatedAt: now, updatedBy: actor, version: a.version + 1 });
-        const added = v.spIds.filter((spId) => !existing.some((a) => a.spId === spId)).map((spId) => newAssignment(sessionId, spId));
+        // 舊資料（明細沒有教案）補上教案
+        for (const a of existing) if (!a.topic && wanted.has(existingKey(a))) repo.update('assignments', { ...a, topic: cur.topic, updatedAt: now, updatedBy: actor, version: a.version + 1 });
+        const have = new Set(existing.map(existingKey));
+        const added = pairs.filter((p) => !have.has(keyOf(p))).map((p) => newAssignment(sessionId, p.spId, p.topic));
         if (added.length) repo.insert('assignments', added);
         const next: Session = { ...cur, ...fields, syncStatus: 'pending', updatedAt: now, updatedBy: actor, version: cur.version + 1 };
         repo.update('sessions', next);
-        audit('session', sessionId, 'update', { ...cur, spIds: existing.map((a) => a.spId) }, { ...next, spIds: v.spIds }, warnings.map((w) => w.message).join('；'));
+        audit('session', sessionId, 'update', { ...cur, cases: existing.map((a) => ({ topic: topicOf(a, cur), sp: a.spNameSnapshot })) }, { ...next, cases: auditCases }, warnings.map((w) => w.message).join('；'));
         rememberOptions(v);
         return { session: next, warnings };
       });
@@ -326,6 +353,23 @@ export function createService({ repo, env, calendar }: Deps) {
       }),
 
     'session.resync': ({ sessionId }) => ({ sessions: [syncCalendar(sessionId)] }),
+
+    /** 批次同步尚未同步／失敗的排程（例如剛設定好 Calendar ID 後）；每次最多處理 limit 筆，避免執行逾時 */
+    'session.resyncAll': ({ limit }) => {
+      if (!getSettings().calendarId) throw new AppError('NOT_CONFIGURED', '請先在系統設定填寫 Google 日曆 ID');
+      const max = Math.min(Math.max(1, Number(limit) || 30), 60);
+      const todo = repo.all('sessions').filter((s) =>
+        !s.isDeleted && s.status !== 'cancelled' ? s.syncStatus !== 'synced' : s.syncStatus !== 'removed' && !!s.calendarEventId,
+      );
+      const done: Session[] = [];
+      for (const s of todo.slice(0, max)) done.push(syncCalendar(s.sessionId));
+      return {
+        sessions: done,
+        synced: done.filter((s) => s.syncStatus === 'synced' || s.syncStatus === 'removed').length,
+        failed: done.filter((s) => s.syncStatus === 'failed').length,
+        remaining: Math.max(0, todo.length - max),
+      };
+    },
 
     'session.verifyAllAsScheduled': ({ sessionId }) =>
       env.withLock(() => {

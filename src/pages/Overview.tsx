@@ -7,7 +7,7 @@ import { addDays, fmtDate, fmtDateShort, fmtHours, weekdayLabel } from '../../sh
 import { notifyState, renderSummary } from '../../shared/template';
 import { copyText } from '../lib/csv';
 import { navigate } from '../lib/router';
-import { useSessionUI } from '../features/sessions';
+import { groupByTopic, useSessionUI } from '../features/sessions';
 import { useToast } from '../components/overlay';
 import { Badge, Button, Empty, SessionBadge, cx } from '../components/ui';
 
@@ -36,7 +36,7 @@ export default function Overview() {
 
   const copyTomorrow = async () => {
     if (!tomorrowItems.length) return toast('info', '明日沒有排程');
-    const text = renderSummary(snap.settings.summaryTemplate, tomorrow, tomorrowItems.map((s) => ({ session: s, spNames: (d.bySession.get(s.sessionId) || []).filter((a) => a.attendance !== 'cancelled').map((a) => spName(d, a)) })));
+    const text = renderSummary(snap.settings.summaryTemplate, tomorrow, tomorrowItems.map((s) => { const l = (d.bySession.get(s.sessionId) || []).filter((a) => a.attendance !== 'cancelled'); return { session: s, spNames: l.map((a) => spName(d, a)), cases: groupByTopic(l, s).map(([topic, xs]) => ({ topic, spNames: xs.map((a) => spName(d, a)) })) }; }));
     (await copyText(text)) ? toast('success', '已複製明日總整理（尚未標記為已通知）') : toast('error', '無法存取剪貼簿，請至提醒中心手動複製');
   };
 
@@ -62,6 +62,12 @@ export default function Overview() {
         </div>
       </header>
 
+      {!snap.settings.calendarId && (
+        <button onClick={() => navigate('/settings')} className="mb-4 flex w-full items-center gap-2 rounded-[16px] border border-gold/50 bg-gold-50 px-4 py-3 text-left text-[14px] text-ink">
+          <CalendarDays className="size-4 shrink-0 text-gold-600" />
+          尚未啟用 Google 日曆，新增的排程不會排入行事曆。<span className="ml-auto font-medium text-pine underline">前往設定 →</span>
+        </button>
+      )}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-6 xl:grid-cols-12">
         {/* Hero：年度核定人時 */}
         <motion.section {...enter(0)} className="relative overflow-hidden rounded-[28px] bg-pine p-7 text-white shadow-lift md:col-span-6 xl:col-span-7 xl:row-span-2">

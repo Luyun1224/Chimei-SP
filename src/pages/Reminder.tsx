@@ -4,6 +4,7 @@ import { Check, ClipboardCopy, Info, MessageSquareText, RotateCcw, Save, UserChe
 import { addDays, fmtDate, fmtDateShort } from '../../shared/time';
 import { DEFAULT_INDIVIDUAL_TEMPLATE, DEFAULT_SUMMARY_TEMPLATE, PLACEHOLDERS, SUMMARY_PLACEHOLDERS, notifyState, renderIndividual, renderSummary } from '../../shared/template';
 import { useSnap, spName } from '../lib/store';
+import { topicOf } from '../../shared/stats';
 import { navigate, type Route } from '../lib/router';
 import { copyText } from '../lib/csv';
 import { useSessionUI } from '../features/sessions';
@@ -32,11 +33,16 @@ export default function Reminder({ route }: { route: Route }) {
     );
   }, [snap.sessions, d, date]);
   const activeSessions = useMemo(() => {
-    const seen = new Map<string, { session: (typeof rows)[number]['s']; spNames: string[] }>();
+    const seen = new Map<string, { session: (typeof rows)[number]['s']; spNames: string[]; cases: { topic: string; spNames: string[] }[] }>();
     for (const r of rows) {
       if (r.s.status === 'cancelled' || r.a.attendance === 'cancelled') continue;
-      const e = seen.get(r.s.sessionId) || { session: r.s, spNames: [] };
-      e.spNames.push(spName(d, r.a));
+      const e = seen.get(r.s.sessionId) || { session: r.s, spNames: [], cases: [] };
+      const name = spName(d, r.a);
+      e.spNames.push(name);
+      const t = topicOf(r.a, r.s);
+      const c = e.cases.find((x) => x.topic === t);
+      if (c) c.spNames.push(name);
+      else e.cases.push({ topic: t, spNames: [name] });
       seen.set(r.s.sessionId, e);
     }
     return [...seen.values()];
@@ -45,8 +51,8 @@ export default function Reminder({ route }: { route: Route }) {
   const summary = renderSummary(snap.settings.summaryTemplate, date, activeSessions);
   const textFor = (r: (typeof rows)[number]) =>
     r.s.status === 'cancelled' || r.a.attendance === 'cancelled'
-      ? `${spName(d, r.a)} 您好，原訂 ${fmtDate(r.s.date)} ${r.s.startTime} 的 SP 演出「${r.s.topic}」已取消，造成不便敬請見諒，謝謝您！`
-      : renderIndividual(snap.settings.individualTemplate, r.s, spName(d, r.a), snap.today);
+      ? `${spName(d, r.a)} 您好，原訂 ${fmtDate(r.s.date)} ${r.s.startTime} 的 SP 演出「${topicOf(r.a, r.s)}」已取消，造成不便敬請見諒，謝謝您！`
+      : renderIndividual(snap.settings.individualTemplate, r.s, spName(d, r.a), snap.today, topicOf(r.a, r.s));
 
   const doCopy = async (key: string, text: string, label: string) => {
     if (await copyText(text)) {
@@ -130,7 +136,7 @@ export default function Reminder({ route }: { route: Route }) {
                           <NotifyBadge state={r.state} />
                         </div>
                         <button className="mt-0.5 block text-left text-[13px] text-ink-2 hover:text-pine" onClick={() => ui.openDetail(r.s.sessionId)}>
-                          <span className="num">報到 {r.s.checkinTime}｜演出 {r.s.startTime}–{r.s.endTime}</span> · {r.s.topic} · {r.s.location}
+                          <span className="num">報到 {r.s.checkinTime}｜演出 {r.s.startTime}–{r.s.endTime}</span> · <b className="text-ink">{topicOf(r.a, r.s)}</b> · {r.s.location}
                         </button>
                         {r.latest && (
                           <div className="mt-0.5 text-[12px] text-ink-3">
@@ -184,7 +190,7 @@ function TemplateEditor({ sample }: { sample?: { s: import('../../shared/types')
   const setValue = tab === 'individual' ? setInd : setSum;
   const demoSession = sample?.s || { sessionId: 'X', date: addDays(snap.today, 1), unit: '醫學系 UGY', topic: '胸痛病史詢問', checkinTime: '08:00', startTime: '08:30', endTime: '11:30', location: '技能中心 3F 第二考場', note: '' } as import('../../shared/types').Session;
   const preview = tab === 'individual'
-    ? renderIndividual(ind, demoSession, sample ? spName(d, sample.a) : '王小明', snap.today)
+    ? renderIndividual(ind, demoSession, sample ? spName(d, sample.a) : '王小明', snap.today, sample ? topicOf(sample.a, sample.s) : undefined)
     : renderSummary(sum, demoSession.date, [{ session: demoSession, spNames: ['王小明', '李美華'] }]);
 
   const save = async () => {

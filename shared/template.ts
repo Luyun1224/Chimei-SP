@@ -46,7 +46,7 @@ function fill(tpl: string, map: Record<string, string>): string {
   return tpl.replace(/\{[^{}]+\}/g, (k) => (k in map ? map[k] : k));
 }
 
-export function renderIndividual(tpl: string, s: Session, spName: string, today: string): string {
+export function renderIndividual(tpl: string, s: Session, spName: string, today: string, topic?: string): string {
   return fill(tpl, {
     '{SP姓名}': spName,
     '{相對日}': relativeDay(s.date, today),
@@ -56,7 +56,7 @@ export function renderIndividual(tpl: string, s: Session, spName: string, today:
     '{報到時間}': s.checkinTime,
     '{開始時間}': s.startTime,
     '{結束時間}': s.endTime,
-    '{教案名稱}': s.topic,
+    '{教案名稱}': topic || s.topic,
     '{申請單位}': s.unit,
     '{備註}': s.note || '',
   });
@@ -65,21 +65,22 @@ export function renderIndividual(tpl: string, s: Session, spName: string, today:
 export function renderSummary(
   tpl: string,
   date: string,
-  items: { session: Session; spNames: string[] }[],
+  items: { session: Session; spNames: string[]; cases?: { topic: string; spNames: string[] }[] }[],
 ): string {
   const list = items
-    .map(({ session: s, spNames }, i) =>
-      [
+    .map(({ session: s, spNames, cases }, i) => {
+      const multi = cases && cases.length > 1;
+      return [
         `${i + 1}. ${s.startTime}–${s.endTime}｜${s.topic}`,
         `   單位：${s.unit}`,
         `   地點：${s.location}`,
         `   報到：${s.checkinTime}`,
-        `   SP：${spNames.join('、')}`,
+        ...(multi ? cases!.map((c) => `   ${c.topic}：${c.spNames.join('、')}`) : [`   SP：${spNames.join('、')}`]),
         s.note ? `   備註：${s.note}` : '',
       ]
         .filter(Boolean)
-        .join('\n'),
-    )
+        .join('\n');
+    })
     .join('\n\n');
   return fill(tpl, {
     '{日期}': fmtDate(date),
@@ -91,7 +92,7 @@ export function renderSummary(
 
 /** 排程內容指紋：影響 SP 行程的欄位變動時改變 */
 export function sessionFingerprint(s: Session, a?: Assignment): string {
-  const src = [s.date, s.checkinTime, s.startTime, s.endTime, s.location, s.topic, s.status, s.isDeleted ? 'D' : '', a?.attendance === 'cancelled' || a?.isDeleted ? 'X' : ''].join('|');
+  const src = [s.date, s.checkinTime, s.startTime, s.endTime, s.location, a?.topic || s.topic, s.status, s.isDeleted ? 'D' : '', a?.attendance === 'cancelled' || a?.isDeleted ? 'X' : ''].join('|');
   let h = 5381;
   for (let i = 0; i < src.length; i++) h = ((h << 5) + h + src.charCodeAt(i)) >>> 0;
   return h.toString(16);

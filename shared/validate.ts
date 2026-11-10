@@ -55,23 +55,46 @@ export function validateSpInput(raw: SpInput): Required<SpInput> {
   return v;
 }
 
-export function validateSessionInput(raw: SessionInput): SessionInput & { note: string; newSpNames: string[] } {
-  const v = {
+export interface NormalizedSession {
+  date: string;
+  unit: string;
+  topic: string;
+  checkinTime: string;
+  startTime: string;
+  endTime: string;
+  location: string;
+  note: string;
+  cases: { topic: string; spIds: string[]; newSpNames: string[] }[];
+  /** 所有教案的既有 SP（不重複），供衝突偵測 */
+  spIds: string[];
+}
+
+const uniq = (a: string[]) => [...new Set(a)];
+
+export function validateSessionInput(raw: SessionInput): NormalizedSession {
+  const rawCases = Array.isArray(raw.cases) && raw.cases.length
+    ? raw.cases
+    : [{ topic: raw.topic || '', spIds: raw.spIds || [], newSpNames: raw.newSpNames || [] }];
+  const cases = rawCases.map((c) => ({
+    topic: clean(c.topic, MAX.text),
+    spIds: uniq((Array.isArray(c.spIds) ? c.spIds : []).map((x) => clean(x, 40)).filter(Boolean)),
+    newSpNames: uniq((Array.isArray(c.newSpNames) ? c.newSpNames : []).map((x) => clean(x, MAX.name)).filter(Boolean)),
+  }));
+  const v: NormalizedSession = {
     date: clean(raw.date, 10),
     unit: clean(raw.unit, MAX.text),
-    topic: clean(raw.topic, MAX.text),
+    topic: clean(uniq(cases.map((c) => c.topic).filter(Boolean)).join('、'), 300),
     checkinTime: clean(raw.checkinTime, 5),
     startTime: clean(raw.startTime, 5),
     endTime: clean(raw.endTime, 5),
     location: clean(raw.location, MAX.text),
     note: clean(raw.note, MAX.note),
-    spIds: Array.isArray(raw.spIds) ? [...new Set(raw.spIds.map((s) => clean(s, 40)).filter(Boolean))] : [],
-    newSpNames: Array.isArray(raw.newSpNames) ? [...new Set(raw.newSpNames.map((s) => clean(s, MAX.name)).filter(Boolean))] : [],
+    cases,
+    spIds: uniq(cases.flatMap((c) => c.spIds)),
   };
   const e: Errors = {};
   if (!isValidDate(v.date)) e.date = '請選擇正確的演出日期';
   if (!v.unit) e.unit = '請輸入申請單位';
-  if (!v.topic) e.topic = '請輸入教案主題';
   if (!v.location) e.location = '請輸入演出地點';
   if (!isValidTime(v.checkinTime)) e.checkinTime = '請輸入報到時間';
   if (!isValidTime(v.startTime)) e.startTime = '請輸入演出開始時間';
@@ -79,8 +102,18 @@ export function validateSessionInput(raw: SessionInput): SessionInput & { note: 
   if (!e.startTime && !e.endTime && diffMinutes(v.startTime, v.endTime) <= 0) e.endTime = '演出結束時間必須晚於開始時間';
   if (!e.checkinTime && !e.startTime && diffMinutes(v.checkinTime, v.startTime) < 0)
     e.checkinTime = '報到時間不可晚於演出開始時間';
-  if (!v.spIds.length && !v.newSpNames.length) e.spIds = '請至少選擇或輸入一位 SP';
-  if (v.spIds.length + v.newSpNames.length > 50) e.spIds = '單場 SP 人數過多';
+  if (cases.length > 30) e.cases = '單場教案數過多';
+  const seen = new Set<string>();
+  cases.forEach((c, i) => {
+    if (!c.topic) e[`case${i}.topic`] = '請輸入教案主題';
+    else if (seen.has(c.topic)) e[`case${i}.topic`] = '同一場次的教案主題重複，請合併為同一列';
+    seen.add(c.topic);
+    if (!c.spIds.length && !c.newSpNames.length) e[`case${i}.sps`] = '請至少選擇或輸入一位 SP';
+    if (c.spIds.length + c.newSpNames.length > 50) e[`case${i}.sps`] = '單一教案 SP 人數過多';
+  });
+  // 舊版欄位名稱（單一教案）也提供錯誤訊息
+  if (e['case0.topic'] && cases.length === 1) e.topic = e['case0.topic'];
+  if (e['case0.sps'] && cases.length === 1) e.spIds = e['case0.sps'];
   fail(e);
   return v;
 }

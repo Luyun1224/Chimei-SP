@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
 import { ArrowLeft, ChevronDown, Download, Pencil } from 'lucide-react';
-import { computeProfile, isCountable } from '../../shared/stats';
+import { computeProfile, isCountable, topicOf } from '../../shared/stats';
 import { fmtDate, fmtDuration, fmtHours, yearOf } from '../../shared/time';
 import { useSnap } from '../lib/store';
 import { navigate, type Route } from '../lib/router';
@@ -43,7 +43,7 @@ export default function SpProfile({ route }: { route: Route }) {
       toCsv(
         ['SP_ID', '姓名', '演出日期', '申請單位', '教案主題', '演出地點', '報到時間', '預定演出', '排程狀態', '出席狀態', '實際開始', '實際結束', '核定分鐘', '核定時數', '核定狀態', '核定人員', '核定時間', '時數備註', '計入實績'],
         records.map(({ a, s }) => [
-          sp.spId, sp.name, s.date, s.unit, s.topic, s.location, s.checkinTime, `${s.startTime}-${s.endTime}`, s.status, ATTENDANCE[a.attendance].label,
+          sp.spId, sp.name, s.date, s.unit, topicOf(a, s), s.location, s.checkinTime, `${s.startTime}-${s.endTime}`, s.status, ATTENDANCE[a.attendance].label,
           a.actualStart, a.actualEnd, a.approvedMinutes ?? '', a.approvedMinutes != null ? (a.approvedMinutes / 60).toFixed(2) : '', a.verifyStatus === 'verified' ? '已核定' : '未核定', a.verifiedBy, a.verifiedAt, a.minutesNote, isCountable(a, s) ? '是' : '否',
         ]),
       ),
@@ -111,7 +111,7 @@ export default function SpProfile({ route }: { route: Route }) {
                 <li key={a.assignmentId}>
                   <button className="grid w-full grid-cols-[1fr_auto] items-center gap-3 px-5 py-3 text-left hover:bg-mist/40 sm:grid-cols-[120px_1fr_auto_auto]" onClick={() => setOpen(isOpen ? null : a.assignmentId)} aria-expanded={isOpen}>
                     <span className="num text-[13px] text-ink-2">{fmtDate(s.date)}</span>
-                    <span className="min-w-0 truncate text-[14px]"><b>{s.topic}</b> <span className="text-ink-3">· {s.unit}</span></span>
+                    <span className="min-w-0 truncate text-[14px]"><b>{topicOf(a, s)}</b> <span className="text-ink-3">· {s.unit}</span></span>
                     <span className="flex items-center gap-1.5 max-sm:col-span-2">
                       <SessionBadge status={s.status} />
                       <Badge tone={ATTENDANCE[a.attendance].tone}>{ATTENDANCE[a.attendance].label}</Badge>

@@ -72,7 +72,7 @@ export const TABLES = {
     legacySheet: 'Performance_Assignments',
     idKey: 'assignmentId',
     columns: [
-      s('assignmentId', '明細編號'), s('sessionId', '排程編號'), s('spId', 'SP編號'), s('spNameSnapshot', 'SP姓名'),
+      s('assignmentId', '明細編號'), s('sessionId', '排程編號'), s('spId', 'SP編號'), s('spNameSnapshot', 'SP姓名'), s('topic', '教案主題'),
       s('attendance', '出席狀態', ENUMS.attendance), s('actualStart', '實際開始'), s('actualEnd', '實際結束'),
       { key: 'approvedMinutes', type: 'nullable-number', label: '核定分鐘數' }, s('minutesNote', '時數備註'),
       s('verifyStatus', '核定狀態', ENUMS.verifyStatus), s('verifiedBy', '核定人員'), s('verifiedAt', '核定時間'),

@@ -100,23 +100,29 @@ var SPHub = (() => {
     fail(e);
     return v;
   }
+  var uniq = (a) => [...new Set(a)];
   function validateSessionInput(raw) {
+    const rawCases = Array.isArray(raw.cases) && raw.cases.length ? raw.cases : [{ topic: raw.topic || "", spIds: raw.spIds || [], newSpNames: raw.newSpNames || [] }];
+    const cases = rawCases.map((c) => ({
+      topic: clean(c.topic, MAX.text),
+      spIds: uniq((Array.isArray(c.spIds) ? c.spIds : []).map((x) => clean(x, 40)).filter(Boolean)),
+      newSpNames: uniq((Array.isArray(c.newSpNames) ? c.newSpNames : []).map((x) => clean(x, MAX.name)).filter(Boolean))
+    }));
     const v = {
       date: clean(raw.date, 10),
       unit: clean(raw.unit, MAX.text),
-      topic: clean(raw.topic, MAX.text),
+      topic: clean(uniq(cases.map((c) => c.topic).filter(Boolean)).join("、"), 300),
       checkinTime: clean(raw.checkinTime, 5),
       startTime: clean(raw.startTime, 5),
       endTime: clean(raw.endTime, 5),
       location: clean(raw.location, MAX.text),
       note: clean(raw.note, MAX.note),
-      spIds: Array.isArray(raw.spIds) ? [...new Set(raw.spIds.map((s2) => clean(s2, 40)).filter(Boolean))] : [],
-      newSpNames: Array.isArray(raw.newSpNames) ? [...new Set(raw.newSpNames.map((s2) => clean(s2, MAX.name)).filter(Boolean))] : []
+      cases,
+      spIds: uniq(cases.flatMap((c) => c.spIds))
     };
     const e = {};
     if (!isValidDate(v.date)) e.date = "請選擇正確的演出日期";
     if (!v.unit) e.unit = "請輸入申請單位";
-    if (!v.topic) e.topic = "請輸入教案主題";
     if (!v.location) e.location = "請輸入演出地點";
     if (!isValidTime(v.checkinTime)) e.checkinTime = "請輸入報到時間";
     if (!isValidTime(v.startTime)) e.startTime = "請輸入演出開始時間";
@@ -124,8 +130,17 @@ var SPHub = (() => {
     if (!e.startTime && !e.endTime && diffMinutes(v.startTime, v.endTime) <= 0) e.endTime = "演出結束時間必須晚於開始時間";
     if (!e.checkinTime && !e.startTime && diffMinutes(v.checkinTime, v.startTime) < 0)
       e.checkinTime = "報到時間不可晚於演出開始時間";
-    if (!v.spIds.length && !v.newSpNames.length) e.spIds = "請至少選擇或輸入一位 SP";
-    if (v.spIds.length + v.newSpNames.length > 50) e.spIds = "單場 SP 人數過多";
+    if (cases.length > 30) e.cases = "單場教案數過多";
+    const seen = /* @__PURE__ */ new Set();
+    cases.forEach((c, i) => {
+      if (!c.topic) e[`case${i}.topic`] = "請輸入教案主題";
+      else if (seen.has(c.topic)) e[`case${i}.topic`] = "同一場次的教案主題重複，請合併為同一列";
+      seen.add(c.topic);
+      if (!c.spIds.length && !c.newSpNames.length) e[`case${i}.sps`] = "請至少選擇或輸入一位 SP";
+      if (c.spIds.length + c.newSpNames.length > 50) e[`case${i}.sps`] = "單一教案 SP 人數過多";
+    });
+    if (e["case0.topic"] && cases.length === 1) e.topic = e["case0.topic"];
+    if (e["case0.sps"] && cases.length === 1) e.spIds = e["case0.sps"];
     fail(e);
     return v;
   }
@@ -162,41 +177,10 @@ var SPHub = (() => {
     return /^[=+@]/.test(s2) ? `'${s2}` : s2;
   }
 
-  // shared/template.ts
-  var DEFAULT_INDIVIDUAL_TEMPLATE = `{SP姓名} 您好，提醒您{相對日}有標準化病人（SP）演出安排：
-
-📅 演出日期：{日期}
-📍 演出地點：{地點}
-🕘 報到時間：{報到時間}
-⏰ 演出時間：{開始時間}–{結束時間}
-📋 教案主題：{教案名稱}
-
-再請您依報到時間準時抵達，謝謝您的協助！`;
-  var DEFAULT_SUMMARY_TEMPLATE = `【SP 演出總整理】{日期}
-共 {場次數} 場、SP {人次} 人次
-
-{場次清單}
-
-如有異動將另行通知，謝謝各位的協助！`;
-  var DEFAULT_SETTINGS = {
-    calendarId: "",
-    adminReminderEnabled: true,
-    adminReminderMinutes: 1440,
-    individualTemplate: DEFAULT_INDIVIDUAL_TEMPLATE,
-    summaryTemplate: DEFAULT_SUMMARY_TEMPLATE,
-    units: [],
-    topics: [],
-    locations: [],
-    inactiveThresholdDays: 90
-  };
-  function sessionFingerprint(s2, a) {
-    const src = [s2.date, s2.checkinTime, s2.startTime, s2.endTime, s2.location, s2.topic, s2.status, s2.isDeleted ? "D" : "", (a == null ? void 0 : a.attendance) === "cancelled" || (a == null ? void 0 : a.isDeleted) ? "X" : ""].join("|");
-    let h = 5381;
-    for (let i = 0; i < src.length; i++) h = (h << 5) + h + src.charCodeAt(i) >>> 0;
-    return h.toString(16);
-  }
-
   // shared/stats.ts
+  function topicOf(a, s2) {
+    return a.topic || (s2 == null ? void 0 : s2.topic) || "";
+  }
   function isCountable(a, s2) {
     return !!s2 && !a.isDeleted && !s2.isDeleted && s2.status === "completed" && a.verifyStatus === "verified" && a.attendance === "present" && typeof a.approvedMinutes === "number";
   }
@@ -220,7 +204,7 @@ var SPHub = (() => {
     var _a;
     const sessionMap = new Map(data.sessions.map((s2) => [s2.sessionId, s2]));
     const spMap = new Map(data.sps.map((p) => [p.spId, p]));
-    const sessionInScope = (s2) => !s2.isDeleted && yearOf(s2.date) === f.year && (!f.month || monthOf(s2.date) === f.month) && (!f.unit || s2.unit === f.unit) && (!f.topic || s2.topic === f.topic);
+    const sessionInScope = (s2) => !s2.isDeleted && yearOf(s2.date) === f.year && (!f.month || monthOf(s2.date) === f.month) && (!f.unit || s2.unit === f.unit);
     const monthly = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, sessions: 0, personTimes: 0, minutes: 0 }));
     const monthSeen = Array.from({ length: 12 }, () => /* @__PURE__ */ new Set());
     const bySp = /* @__PURE__ */ new Map(), byUnit = /* @__PURE__ */ new Map(), byTopic = /* @__PURE__ */ new Map();
@@ -231,6 +215,7 @@ var SPHub = (() => {
       const s2 = sessionMap.get(a.sessionId);
       if (!s2 || !sessionInScope(s2)) continue;
       if (f.spId && a.spId !== f.spId) continue;
+      if (f.topic && topicOf(a, s2) !== f.topic) continue;
       if (needsVerification(a, s2)) unverified++;
       if (!isCountable(a, s2)) continue;
       const m = a.approvedMinutes;
@@ -246,13 +231,14 @@ var SPHub = (() => {
       }
       inc(bySp, a.spId, ((_a = spMap.get(a.spId)) == null ? void 0 : _a.name) || a.spNameSnapshot, s2.sessionId, m, seenSp);
       inc(byUnit, s2.unit, s2.unit, s2.sessionId, m, seenUnit);
-      inc(byTopic, s2.topic, s2.topic, s2.sessionId, m, seenTopic);
+      inc(byTopic, topicOf(a, s2), topicOf(a, s2), s2.sessionId, m, seenTopic);
     }
     const statusCounts = { scheduled: 0, completed: 0, cancelled: 0 };
     let awaitingCompletion = 0;
     for (const s2 of data.sessions) {
       if (!sessionInScope(s2)) continue;
       if (f.spId && !data.assignments.some((a) => a.sessionId === s2.sessionId && a.spId === f.spId && !a.isDeleted)) continue;
+      if (f.topic && !data.assignments.some((a) => a.sessionId === s2.sessionId && !a.isDeleted && topicOf(a, s2) === f.topic)) continue;
       statusCounts[s2.status]++;
       if (s2.status === "scheduled" && s2.date < today) awaitingCompletion++;
     }
@@ -290,6 +276,40 @@ var SPHub = (() => {
     };
   }
 
+  // shared/template.ts
+  var DEFAULT_INDIVIDUAL_TEMPLATE = `{SP姓名} 您好，提醒您{相對日}有標準化病人（SP）演出安排：
+
+📅 演出日期：{日期}
+📍 演出地點：{地點}
+🕘 報到時間：{報到時間}
+⏰ 演出時間：{開始時間}–{結束時間}
+📋 教案主題：{教案名稱}
+
+再請您依報到時間準時抵達，謝謝您的協助！`;
+  var DEFAULT_SUMMARY_TEMPLATE = `【SP 演出總整理】{日期}
+共 {場次數} 場、SP {人次} 人次
+
+{場次清單}
+
+如有異動將另行通知，謝謝各位的協助！`;
+  var DEFAULT_SETTINGS = {
+    calendarId: "",
+    adminReminderEnabled: true,
+    adminReminderMinutes: 1440,
+    individualTemplate: DEFAULT_INDIVIDUAL_TEMPLATE,
+    summaryTemplate: DEFAULT_SUMMARY_TEMPLATE,
+    units: [],
+    topics: [],
+    locations: [],
+    inactiveThresholdDays: 90
+  };
+  function sessionFingerprint(s2, a) {
+    const src = [s2.date, s2.checkinTime, s2.startTime, s2.endTime, s2.location, (a == null ? void 0 : a.topic) || s2.topic, s2.status, s2.isDeleted ? "D" : "", (a == null ? void 0 : a.attendance) === "cancelled" || (a == null ? void 0 : a.isDeleted) ? "X" : ""].join("|");
+    let h = 5381;
+    for (let i = 0; i < src.length; i++) h = (h << 5) + h + src.charCodeAt(i) >>> 0;
+    return h.toString(16);
+  }
+
   // server/service.ts
   var AUDIT_MAX = 45e3;
   function createService({ repo, env, calendar }) {
@@ -325,10 +345,13 @@ var SPHub = (() => {
       const st = getSettings();
       const patch = {};
       const add = (key, v) => {
-        if (v && !st[key].includes(v)) patch[key] = JSON.stringify([...st[key], v].slice(-300));
+        if (v && !st[key].includes(v)) {
+          st[key] = [...st[key], v].slice(-300);
+          patch[key] = JSON.stringify(st[key]);
+        }
       };
       add("units", input.unit);
-      add("topics", input.topic);
+      for (const c of input.cases) add("topics", c.topic);
       add("locations", input.location);
       if (Object.keys(patch).length) repo.setSettings(patch);
     }
@@ -361,8 +384,14 @@ var SPHub = (() => {
       return warnings;
     }
     function buildEvent(s2) {
-      const names = liveAssignmentsOf(s2.sessionId).filter((a) => a.attendance !== "cancelled").map((a) => a.spNameSnapshot);
+      const live = liveAssignmentsOf(s2.sessionId).filter((a) => a.attendance !== "cancelled");
+      const byTopic = /* @__PURE__ */ new Map();
+      for (const a of live) {
+        const t = topicOf(a, s2);
+        byTopic.set(t, [...byTopic.get(t) || [], a.spNameSnapshot]);
+      }
       const st = getSettings();
+      const caseLines = [...byTopic.entries()].map(([t, names]) => `・${t}：${names.join("、")}`);
       return {
         sessionId: s2.sessionId,
         title: `【SP演出】${s2.topic}｜${s2.unit}`,
@@ -372,12 +401,12 @@ var SPHub = (() => {
         date: s2.date,
         reminderMinutes: st.adminReminderEnabled ? st.adminReminderMinutes : null,
         description: [
-          `SP：${names.join("、") || "（未指派）"}`,
           `報到時間：${s2.checkinTime}`,
           `演出時間：${s2.startTime}–${s2.endTime}`,
-          `教案主題：${s2.topic}`,
           `申請單位：${s2.unit}`,
           `演出地點：${s2.location}`,
+          `教案與 SP（共 ${live.length} 人次）：`,
+          ...caseLines.length ? caseLines : ["（未指派）"],
           s2.note ? `備註：${s2.note}` : "",
           "",
           `系統排程 ID：${s2.sessionId}`,
@@ -456,18 +485,21 @@ var SPHub = (() => {
             if (prev) return { session: prev, replay: true };
           }
           const allSps = repo.all("sps");
-          const toCreate = [];
-          for (const name of v.newSpNames) {
-            const same = allSps.filter((p) => p.name === name).sort((a, b) => (a.status === "active" ? -1 : 0) - (b.status === "active" ? -1 : 0));
-            const hit = same.find((p) => p.status !== "inactive") || same[0];
-            if (hit) {
-              if (!v.spIds.includes(hit.spId)) v.spIds.push(hit.spId);
-            } else toCreate.push(name);
+          const toCreate = /* @__PURE__ */ new Set();
+          const resolved = /* @__PURE__ */ new Map();
+          for (const c of v.cases) {
+            for (const name of c.newSpNames) {
+              const same = allSps.filter((p) => p.name === name).sort((a, b) => (a.status === "active" ? -1 : 0) - (b.status === "active" ? -1 : 0));
+              const hit = same.find((p) => p.status !== "inactive") || same[0];
+              if (hit) resolved.set(name, hit.spId);
+              else toCreate.add(name);
+            }
           }
+          v.spIds = [.../* @__PURE__ */ new Set([...v.spIds, ...resolved.values()])];
           const warnings = detectWarnings(v, sessionId);
           if (warnings.length && !confirm) throw new AppError("NEEDS_CONFIRMATION", "偵測到可能的衝突或重複，請確認", { warnings });
           const now = env.nowIso(), actor = env.user();
-          const createdSps = toCreate.map((name) => ({
+          const createdSps = [...toCreate].map((name) => ({
             spId: id("SP"),
             name,
             phone: "",
@@ -485,15 +517,24 @@ var SPHub = (() => {
           }));
           if (createdSps.length) {
             repo.insert("sps", createdSps);
-            for (const p of createdSps) audit("sp", p.spId, "create", null, p, "排程表單中直接新增");
-            v.spIds.push(...createdSps.map((p) => p.spId));
+            for (const p of createdSps) {
+              audit("sp", p.spId, "create", null, p, "排程表單中直接新增");
+              resolved.set(p.name, p.spId);
+            }
           }
+          const pairs = [];
+          for (const c of v.cases) {
+            const ids = [...c.spIds, ...c.newSpNames.map((n) => resolved.get(n))];
+            for (const spId of new Set(ids)) pairs.push({ topic: c.topic, spId });
+          }
+          const keyOf = (x) => `${x.spId}|${x.topic}`;
           const spMap = new Map(repo.all("sps").map((p) => [p.spId, p]));
-          const newAssignment = (sid, spId) => ({
+          const newAssignment = (sid, spId, topic) => ({
             assignmentId: id("A"),
             sessionId: sid,
             spId,
             spNameSnapshot: spMap.get(spId).name,
+            topic,
             attendance: "pending",
             actualStart: "",
             actualEnd: "",
@@ -509,6 +550,10 @@ var SPHub = (() => {
             version: 1
           });
           const fields = { date: v.date, unit: v.unit, topic: v.topic, checkinTime: v.checkinTime, startTime: v.startTime, endTime: v.endTime, location: v.location, note: v.note };
+          const auditCases = v.cases.map((c) => ({ topic: c.topic, sps: pairs.filter((p) => p.topic === c.topic).map((p) => {
+            var _a;
+            return (_a = spMap.get(p.spId)) == null ? void 0 : _a.name;
+          }) }));
           if (!sessionId) {
             const s2 = {
               sessionId: id("S"),
@@ -528,10 +573,9 @@ var SPHub = (() => {
               updatedBy: actor,
               version: 1
             };
-            const as = v.spIds.map((spId) => newAssignment(s2.sessionId, spId));
             repo.insert("sessions", [s2]);
-            repo.insert("assignments", as);
-            audit("session", s2.sessionId, "create", null, { ...s2, spIds: v.spIds }, warnings.map((w) => w.message).join("；"));
+            repo.insert("assignments", pairs.map((p) => newAssignment(s2.sessionId, p.spId, p.topic)));
+            audit("session", s2.sessionId, "create", null, { ...s2, cases: auditCases }, warnings.map((w) => w.message).join("；"));
             rememberOptions(v);
             return { session: s2, warnings };
           }
@@ -540,15 +584,19 @@ var SPHub = (() => {
           if (cur.status === "cancelled") throw new AppError("STATE", "已取消的排程不可修改");
           checkVersion(cur, expectedVersion);
           const existing = liveAssignmentsOf(sessionId);
-          const removed = existing.filter((a) => !v.spIds.includes(a.spId));
+          const wanted = new Set(pairs.map(keyOf));
+          const existingKey = (a) => keyOf({ spId: a.spId, topic: topicOf(a, cur) });
+          const removed = existing.filter((a) => !wanted.has(existingKey(a)));
           const locked = removed.filter((a) => a.verifyStatus === "verified");
-          if (locked.length) throw new AppError("STATE", `${locked.map((a) => a.spNameSnapshot).join("、")} 已完成時數核定，請先在「演出核定」取消核定後再移除`);
+          if (locked.length) throw new AppError("STATE", `${locked.map((a) => a.spNameSnapshot).join("、")} 已完成時數核定，請先在「演出核定」取消核定後再移除或更換教案`);
           for (const a of removed) repo.update("assignments", { ...a, isDeleted: true, updatedAt: now, updatedBy: actor, version: a.version + 1 });
-          const added = v.spIds.filter((spId) => !existing.some((a) => a.spId === spId)).map((spId) => newAssignment(sessionId, spId));
+          for (const a of existing) if (!a.topic && wanted.has(existingKey(a))) repo.update("assignments", { ...a, topic: cur.topic, updatedAt: now, updatedBy: actor, version: a.version + 1 });
+          const have = new Set(existing.map(existingKey));
+          const added = pairs.filter((p) => !have.has(keyOf(p))).map((p) => newAssignment(sessionId, p.spId, p.topic));
           if (added.length) repo.insert("assignments", added);
           const next = { ...cur, ...fields, syncStatus: "pending", updatedAt: now, updatedBy: actor, version: cur.version + 1 };
           repo.update("sessions", next);
-          audit("session", sessionId, "update", { ...cur, spIds: existing.map((a) => a.spId) }, { ...next, spIds: v.spIds }, warnings.map((w) => w.message).join("；"));
+          audit("session", sessionId, "update", { ...cur, cases: existing.map((a) => ({ topic: topicOf(a, cur), sp: a.spNameSnapshot })) }, { ...next, cases: auditCases }, warnings.map((w) => w.message).join("；"));
           rememberOptions(v);
           return { session: next, warnings };
         });
@@ -612,6 +660,22 @@ var SPHub = (() => {
         return { sessions: [next] };
       }),
       "session.resync": ({ sessionId }) => ({ sessions: [syncCalendar(sessionId)] }),
+      /** 批次同步尚未同步／失敗的排程（例如剛設定好 Calendar ID 後）；每次最多處理 limit 筆，避免執行逾時 */
+      "session.resyncAll": ({ limit }) => {
+        if (!getSettings().calendarId) throw new AppError("NOT_CONFIGURED", "請先在系統設定填寫 Google 日曆 ID");
+        const max = Math.min(Math.max(1, Number(limit) || 30), 60);
+        const todo = repo.all("sessions").filter(
+          (s2) => !s2.isDeleted && s2.status !== "cancelled" ? s2.syncStatus !== "synced" : s2.syncStatus !== "removed" && !!s2.calendarEventId
+        );
+        const done = [];
+        for (const s2 of todo.slice(0, max)) done.push(syncCalendar(s2.sessionId));
+        return {
+          sessions: done,
+          synced: done.filter((s2) => s2.syncStatus === "synced" || s2.syncStatus === "removed").length,
+          failed: done.filter((s2) => s2.syncStatus === "failed").length,
+          remaining: Math.max(0, todo.length - max)
+        };
+      },
       "session.verifyAllAsScheduled": ({ sessionId }) => env.withLock(() => {
         repo.refresh();
         const cur = find("sessions", sessionId);
@@ -874,6 +938,7 @@ var SPHub = (() => {
         s("sessionId", "排程編號"),
         s("spId", "SP編號"),
         s("spNameSnapshot", "SP姓名"),
+        s("topic", "教案主題"),
         s("attendance", "出席狀態", ENUMS.attendance),
         s("actualStart", "實際開始"),
         s("actualEnd", "實際結束"),
@@ -1118,7 +1183,7 @@ var SPHub = (() => {
   // server/gas/calendarGateway.ts
   var TAG = "spHubSessionId";
   function getCal(calendarId) {
-    const cal = CalendarApp.getCalendarById(calendarId);
+    const cal = calendarId === "primary" ? CalendarApp.getDefaultCalendar() : CalendarApp.getCalendarById(calendarId);
     if (!cal) throw new Error(`找不到行事曆或沒有權限：${calendarId}（請確認已將此行事曆以「變更活動」權限分享給操作中的管理員帳號）`);
     return cal;
   }
@@ -1216,7 +1281,7 @@ var SPHub = (() => {
         if (!settingsCal) calendarError = "尚未設定 Calendar ID";
         else {
           try {
-            const cal = CalendarApp.getCalendarById(settingsCal);
+            const cal = settingsCal === "primary" ? CalendarApp.getDefaultCalendar() : CalendarApp.getCalendarById(settingsCal);
             if (!cal) calendarError = "找不到行事曆或沒有權限";
             else {
               calendarOk = true;

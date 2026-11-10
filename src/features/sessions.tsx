@@ -1,15 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'motion/react';
-import { AlertTriangle, CalendarCheck2, CheckCheck, Clock, History, MapPin, Pencil, RefreshCw, Trash2, Users, XCircle } from 'lucide-react';
-import type { AuditEntry, Session, SessionInput, Warning } from '../../shared/types';
+import { AlertTriangle, CalendarCheck2, CalendarPlus, CheckCheck, Clock, History, MapPin, Pencil, Plus, RefreshCw, Trash2, Users, XCircle } from 'lucide-react';
+import type { Assignment, AuditEntry, Session, SessionInput, Warning } from '../../shared/types';
 import { AppError, validateSessionInput } from '../../shared/validate';
 import { addDays, diffMinutes, fmtDate, fmtDuration, toMinutes } from '../../shared/time';
 import { notifyState } from '../../shared/template';
+import { topicOf } from '../../shared/stats';
 import { useData, spName } from '../lib/store';
 import { ApiCallError, call, newRequestId } from '../lib/api';
 import { navigate } from '../lib/router';
 import { Drawer, Modal, useConfirm, useToast } from '../components/overlay';
-import { ATTENDANCE, Badge, Button, Field, NotifyBadge, SessionBadge, SyncBadge, cx } from '../components/ui';
+import { ATTENDANCE, Badge, Button, Field, IconButton, NotifyBadge, SessionBadge, SyncBadge, cx } from '../components/ui';
 import { Combo, SpPicker, isNewSp, NEW_SP_PREFIX } from '../components/pickers';
 
 type View = { kind: 'new'; prefill?: Partial<SessionInput> } | { kind: 'edit'; id: string } | { kind: 'detail'; id: string } | null;
@@ -42,12 +43,16 @@ export function SessionUIProvider({ children }: { children: ReactNode }) {
 }
 
 // ======================= 表單 =======================
-const blank = (date?: string): SessionInput => ({ date: date || '', unit: '', topic: '', checkinTime: '08:00', startTime: '08:30', endTime: '12:00', location: '', note: '', spIds: [] });
+interface CaseRow { key: string; topic: string; sps: string[] }
+interface FormState { date: string; unit: string; checkinTime: string; startTime: string; endTime: string; location: string; note: string; cases: CaseRow[] }
+let caseSeq = 0;
+const newCase = (topic = '', sps: string[] = []): CaseRow => ({ key: `c${++caseSeq}`, topic, sps });
+const blank = (date?: string): FormState => ({ date: date || '', unit: '', checkinTime: '08:00', startTime: '08:30', endTime: '12:00', location: '', note: '', cases: [newCase()] });
 
 function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; prefill?: Partial<SessionInput> } | { kind: 'edit'; id: string } | null; onClose: () => void; onSaved: (id: string) => void }) {
   const { snap, d, mutate } = useData();
   const toast = useToast();
-  const [form, setForm] = useState<SessionInput>(blank());
+  const [form, setForm] = useState<FormState>(blank());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [warnings, setWarnings] = useState<Warning[] | null>(null);
@@ -60,17 +65,30 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
     setErrors({});
     setWarnings(null);
     if (view.kind === 'edit' && editing) {
-      setForm({ ...editing, spIds: (d.bySession.get(editing.sessionId) || []).map((a) => a.spId) });
+      // 依教案分組既有 SP
+      const groups = new Map<string, string[]>();
+      for (const a of d.bySession.get(editing.sessionId) || []) {
+        const t = topicOf(a, editing);
+        groups.set(t, [...(groups.get(t) || []), a.spId]);
+      }
+      const cases = [...groups.entries()].map(([t, ids]) => newCase(t, ids));
+      setForm({ date: editing.date, unit: editing.unit, checkinTime: editing.checkinTime, startTime: editing.startTime, endTime: editing.endTime, location: editing.location, note: editing.note, cases: cases.length ? cases : [newCase(editing.topic)] });
     } else if (view.kind === 'new') {
-      setForm({ ...blank(snap?.today ? addDays(snap.today, 1) : ''), ...view.prefill });
+      setForm({ ...blank(view.prefill?.date || (snap?.today ? addDays(snap.today, 1) : '')) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
-  const set = <K extends keyof SessionInput>(k: K, v: SessionInput[K]) => {
+  const set = <K extends keyof FormState>(k: K, v: FormState[K]) => {
     setForm((f) => ({ ...f, [k]: v }));
     setErrors((e) => ({ ...e, [k]: '' }));
   };
+  const setCase = (i: number, patch: Partial<CaseRow>) => {
+    setForm((f) => ({ ...f, cases: f.cases.map((c, j) => (j === i ? { ...c, ...patch } : c)) }));
+    setErrors((e) => ({ ...e, [`case${i}.topic`]: '', [`case${i}.sps`]: '', topic: '', spIds: '' }));
+  };
+  const addCase = () => setForm((f) => ({ ...f, cases: [...f.cases, newCase()] }));
+  const removeCase = (i: number) => setForm((f) => ({ ...f, cases: f.cases.filter((_, j) => j !== i) }));
 
   /** 即時衝突提示（後端仍會再次檢查） */
   const busy = useMemo(() => {
@@ -80,18 +98,22 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
     for (const s of snap.sessions) {
       if (s.sessionId === editing?.sessionId || s.status === 'cancelled' || s.date !== form.date) continue;
       if (!(s1 < toMinutes(s.endTime) && toMinutes(s.checkinTime) < e1)) continue;
-      for (const a of d.bySession.get(s.sessionId) || []) if (a.attendance !== 'cancelled') m.set(a.spId, `${s.checkinTime}–${s.endTime} 已排「${s.topic}」`);
+      for (const a of d.bySession.get(s.sessionId) || []) if (a.attendance !== 'cancelled') m.set(a.spId, `${s.checkinTime}–${s.endTime} 已排「${topicOf(a, s)}」`);
     }
     return m;
   }, [snap, d, form.date, form.checkinTime, form.endTime, editing]);
 
   const minutes = /^\d\d:\d\d$/.test(form.startTime) && /^\d\d:\d\d$/.test(form.endTime) ? diffMinutes(form.startTime, form.endTime) : 0;
+  const personTimes = form.cases.reduce((n, c) => n + c.sps.length, 0);
 
-  /** 表單內的 'new:姓名' 轉為 newSpNames，其餘為既有 spIds */
+  /** 表單 → API：'new:姓名' 轉為 newSpNames */
   const payload = (): SessionInput => ({
-    ...form,
-    spIds: form.spIds.filter((x) => !isNewSp(x)),
-    newSpNames: form.spIds.filter(isNewSp).map((x) => x.slice(NEW_SP_PREFIX.length)),
+    date: form.date, unit: form.unit, checkinTime: form.checkinTime, startTime: form.startTime, endTime: form.endTime, location: form.location, note: form.note,
+    cases: form.cases.map((c) => ({
+      topic: c.topic,
+      spIds: c.sps.filter((x) => !isNewSp(x)),
+      newSpNames: c.sps.filter(isNewSp).map((x) => x.slice(NEW_SP_PREFIX.length)),
+    })),
   });
 
   async function submit(confirm = false) {
@@ -112,9 +134,9 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
       });
       const s = r.sessions![0];
       setWarnings(null);
-      if (s.syncStatus === 'synced') toast('success', editing ? '已更新排程，並同步更新 Google 日曆事件' : '已新增排程，並建立 Google 日曆事件');
+      if (s.syncStatus === 'synced') toast('success', editing ? '已更新排程，並同步更新 Google 日曆事件' : '已新增排程，並排入 Google 日曆');
       else if (s.syncStatus === 'failed') toast('error', '排程已儲存，但日曆同步失敗，可於詳情中重試');
-      else if (s.syncStatus === 'disabled') toast('info', '排程已儲存（尚未設定 Calendar ID，未同步日曆）');
+      else if (s.syncStatus === 'disabled') toast('info', '排程已儲存。尚未設定 Google 日曆，請到「系統設定」啟用後即可排入日曆');
       onSaved(s.sessionId);
     } catch (e) {
       if (e instanceof ApiCallError && e.code === 'NEEDS_CONFIRMATION') {
@@ -139,12 +161,13 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
         onClose={onClose}
         eyebrow={editing ? `編輯排程 · ${editing.sessionId}` : 'New Performance'}
         title={editing ? '修改演出排程' : '新增演出排程'}
+        width={640}
         footer={
           <>
-            <span className="mr-auto text-[12px] text-ink-3">{minutes > 0 && `預定演出 ${fmtDuration(minutes)} · ${form.spIds.length} 位 SP`}</span>
+            <span className="mr-auto text-[12px] text-ink-3">{minutes > 0 && `預定演出 ${fmtDuration(minutes)} · ${form.cases.length} 個教案 · ${personTimes} 人次`}</span>
             <Button onClick={onClose}>取消</Button>
             <Button variant="primary" loading={saving} onClick={() => submit(false)} icon={<CalendarCheck2 className="size-4" />}>
-              儲存並同步日曆
+              {st.calendarId ? '儲存並排入日曆' : '儲存'}
             </Button>
           </>
         }
@@ -159,9 +182,6 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
           <Field label="申請單位" required error={errors.unit} className="col-span-2">
             <Combo ariaLabel="申請單位" value={form.unit} onChange={(v) => set('unit', v)} options={st.units} placeholder="例：醫學系 UGY" invalid={!!errors.unit} />
           </Field>
-          <Field label="教案主題" required error={errors.topic} className="col-span-2">
-            <Combo ariaLabel="教案主題" value={form.topic} onChange={(v) => set('topic', v)} options={st.topics} placeholder="例：胸痛病史詢問" invalid={!!errors.topic} />
-          </Field>
           <div className="col-span-2 grid grid-cols-3 gap-3 rounded-[16px] bg-mist/60 p-3">
             <Field label="報到時間" required error={errors.checkinTime}>
               <input type="time" className={cx('field', errors.checkinTime && 'field-error')} value={form.checkinTime} onChange={(e) => set('checkinTime', e.target.value)} />
@@ -174,9 +194,40 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
             </Field>
             <p className="col-span-3 text-[12px] text-ink-3">報到時間與演出時間分開記錄；報到後準備時間不計入核定演出時數。</p>
           </div>
-          <Field label="SP 人員（可多位）" required error={errors.spIds} className="col-span-2" hint={busy.size ? '⚠ 標示者在此時段已有其他排程' : '可從名單選取，或直接輸入姓名按 Enter 新增；多位可用「、」分隔一次輸入'}>
-            <SpPicker sps={snap.sps} value={form.spIds} onChange={(v) => set('spIds', v)} busy={busy} invalid={!!errors.spIds} />
-          </Field>
+
+          <section className="col-span-2">
+            <div className="mb-2 flex items-end justify-between">
+              <div>
+                <div className="text-[13px] font-medium text-ink-2">教案與 SP<span className="ml-0.5 text-gold-600">*</span></div>
+                <div className="text-[12px] text-ink-3">同一場次可有多個教案，每個教案各自安排 SP；姓名可直接輸入新增</div>
+              </div>
+            </div>
+            <ol className="space-y-3">
+              {form.cases.map((c, i) => (
+                <motion.li key={c.key} layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="rounded-[16px] border border-line bg-white p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="num flex size-6 shrink-0 items-center justify-center rounded-full bg-pine text-[12px] font-semibold text-white">{i + 1}</span>
+                    <div className="flex-1">
+                      <Combo ariaLabel={`第 ${i + 1} 個教案主題`} value={c.topic} onChange={(v) => setCase(i, { topic: v })} options={st.topics} placeholder="教案主題，例：胸痛病史詢問" invalid={!!errors[`case${i}.topic`]} quick={i === 0 ? 4 : 0} />
+                    </div>
+                    {form.cases.length > 1 && (
+                      <IconButton label={`移除第 ${i + 1} 個教案`} onClick={() => removeCase(i)}>
+                        <Trash2 className="size-4" />
+                      </IconButton>
+                    )}
+                  </div>
+                  {errors[`case${i}.topic`] && <p className="mb-1 text-[12px] text-danger">{errors[`case${i}.topic`]}</p>}
+                  <SpPicker sps={snap.sps} value={c.sps} onChange={(v) => setCase(i, { sps: v })} busy={busy} invalid={!!errors[`case${i}.sps`]} />
+                  {errors[`case${i}.sps`] && <p className="mt-1 text-[12px] text-danger">{errors[`case${i}.sps`]}</p>}
+                </motion.li>
+              ))}
+            </ol>
+            <Button type="button" size="sm" variant="ghost" className="mt-2" icon={<Plus className="size-4" />} onClick={addCase}>
+              新增教案
+            </Button>
+            {busy.size > 0 && <p className="mt-1 text-[12px] text-warn">⚠ 名單中標示的 SP 在此時段已有其他排程</p>}
+          </section>
+
           <Field label="備註" className="col-span-2">
             <textarea className="field min-h-20" value={form.note} onChange={(e) => set('note', e.target.value)} placeholder="選填：服裝、考站資訊、聯絡事項…" />
           </Field>
@@ -291,17 +342,13 @@ function SessionDetailDrawer({ id, onClose, onEdit }: { id: string | null; onClo
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
           <div className="flex flex-wrap items-center gap-2">
             <SessionBadge status={s.status} />
-            <SyncBadge status={s.syncStatus} error={s.syncError} />
-            {(s.syncStatus === 'failed' || s.syncStatus === 'pending' || s.syncStatus === 'disabled') && (
-              <Button size="sm" icon={<RefreshCw className="size-3.5" />} loading={busy === 'sync'} onClick={() => run('sync', async () => {
-                const r = await mutate('session.resync', { sessionId: s.sessionId });
-                if (r.sessions?.[0].syncStatus !== 'synced' && r.sessions?.[0].syncStatus !== 'removed') throw new Error('仍無法同步：' + (r.sessions?.[0].syncError || ''));
-              }, '日曆已同步')}>
-                重試同步
-              </Button>
-            )}
           </div>
-          {s.syncStatus === 'failed' && <p className="rounded-[12px] bg-danger-50 px-3 py-2 text-[13px] text-danger">同步失敗原因：{s.syncError}</p>}
+          <CalendarPanel s={s} busy={busy === 'sync'} onSync={() => run('sync', async () => {
+            const r = await mutate('session.resync', { sessionId: s.sessionId });
+            const st = r.sessions?.[0].syncStatus;
+            if (st === 'disabled') throw new Error('尚未設定 Google 日曆，請到「系統設定」啟用');
+            if (st !== 'synced' && st !== 'removed') throw new Error('仍無法同步：' + (r.sessions?.[0].syncError || ''));
+          }, '已排入 Google 日曆')} onSettings={() => { onClose(); navigate('/settings'); }} calendarConfigured={!!snap.settings.calendarId} />
           {s.status === 'cancelled' && <p className="rounded-[12px] bg-mist px-3 py-2 text-[13px] text-ink-2">取消原因：{s.cancelReason}</p>}
 
           <dl className="grid grid-cols-2 gap-3">
@@ -313,18 +360,25 @@ function SessionDetailDrawer({ id, onClose, onEdit }: { id: string | null; onClo
 
           <section>
             <h3 className="mb-2 flex items-center gap-1.5 text-[14px] font-semibold text-ink"><Users className="size-4 text-pine" />SP 人員（{list.length}）</h3>
-            <ul className="divide-y divide-line rounded-[16px] border border-line bg-white">
-              {list.map((a) => (
-                <li key={a.assignmentId} className="flex flex-wrap items-center gap-2 px-4 py-3">
-                  <button className="font-medium text-pine underline-offset-2 hover:underline" onClick={() => { onClose(); navigate(`/sps/${a.spId}`); }}>
-                    {spName(d, a)}
-                  </button>
-                  <Badge tone={ATTENDANCE[a.attendance].tone}>{ATTENDANCE[a.attendance].label}</Badge>
-                  {a.verifyStatus === 'verified' ? <Badge tone="sage">已核定 {fmtDuration(a.approvedMinutes || 0)}</Badge> : s.status === 'completed' && <Badge tone="warn">待核定</Badge>}
-                  <span className="ml-auto"><NotifyBadge state={notifyState(d.latestNotify.get(a.assignmentId), s, a)} /></span>
-                </li>
+            <div className="space-y-3">
+              {groupByTopic(list, s).map(([topic, items]) => (
+                <div key={topic} className="overflow-hidden rounded-[16px] border border-line bg-white">
+                  <div className="flex items-center justify-between bg-mist/60 px-4 py-2 text-[13px]"><b className="text-ink">{topic}</b><span className="text-ink-3">{items.length} 位</span></div>
+                  <ul className="divide-y divide-line">
+                    {items.map((a) => (
+                      <li key={a.assignmentId} className="flex flex-wrap items-center gap-2 px-4 py-3">
+                        <button className="font-medium text-pine underline-offset-2 hover:underline" onClick={() => { onClose(); navigate(`/sps/${a.spId}`); }}>
+                          {spName(d, a)}
+                        </button>
+                        <Badge tone={ATTENDANCE[a.attendance].tone}>{ATTENDANCE[a.attendance].label}</Badge>
+                        {a.verifyStatus === 'verified' ? <Badge tone="sage">已核定 {fmtDuration(a.approvedMinutes || 0)}</Badge> : s.status === 'completed' && <Badge tone="warn">待核定</Badge>}
+                        <span className="ml-auto"><NotifyBadge state={notifyState(d.latestNotify.get(a.assignmentId), s, a)} /></span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
+            </div>
             {s.status === 'completed' && (
               <Button size="sm" variant="ghost" className="mt-2" onClick={() => { onClose(); navigate('/verify', { session: s.sessionId }); }}>
                 前往核定時數 →
@@ -384,6 +438,63 @@ export function AuditList({ items }: { items: AuditEntry[] }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+export function groupByTopic(list: Assignment[], s: Session): [string, Assignment[]][] {
+  const m = new Map<string, Assignment[]>();
+  for (const a of list) {
+    const t = topicOf(a, s);
+    m.set(t, [...(m.get(t) || []), a]);
+  }
+  return [...m.entries()];
+}
+
+/** 個人 Google 日曆「新增活動」連結（不需任何設定；開啟後由使用者自行儲存） */
+export function personalCalendarLink(s: Session, cases: [string, string[]][]): string {
+  const d = s.date.replace(/-/g, '');
+  const t = (x: string) => x.replace(':', '') + '00';
+  const details = [
+    `報到時間：${s.checkinTime}`, `演出時間：${s.startTime}–${s.endTime}`, `申請單位：${s.unit}`,
+    ...cases.map(([topic, names]) => `${topic}：${names.join('、')}`), s.note ? `備註：${s.note}` : '',
+  ].filter(Boolean).join('\n');
+  const q = new URLSearchParams({ action: 'TEMPLATE', text: `【SP演出】${s.topic}｜${s.unit}`, dates: `${d}T${t(s.startTime)}/${d}T${t(s.endTime)}`, ctz: 'Asia/Taipei', details, location: s.location });
+  return 'https://calendar.google.com/calendar/render?' + q.toString();
+}
+
+function CalendarPanel({ s, busy, onSync, onSettings, calendarConfigured }: { s: Session; busy: boolean; onSync: () => void; onSettings: () => void; calendarConfigured: boolean }) {
+  const { d } = useData();
+  const cases = groupByTopic((d.bySession.get(s.sessionId) || []).filter((a) => a.attendance !== 'cancelled'), s).map(([t, l]) => [t, l.map((a) => spName(d, a))] as [string, string[]]);
+  const cancelled = s.status === 'cancelled';
+  return (
+    <section className="rounded-[16px] border border-line bg-white p-4">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <CalendarCheck2 className="size-4 text-pine" />
+        <b className="text-[14px]">Google 日曆</b>
+        <SyncBadge status={s.syncStatus} error={s.syncError} />
+      </div>
+      {!calendarConfigured ? (
+        <p className="mb-3 text-[13px] text-ink-2">尚未設定系統日曆，所以還沒自動排入。到「系統設定」選擇「使用我的 Google 日曆」或填入共用日曆 ID 後，按下方按鈕即可排入。</p>
+      ) : s.syncStatus === 'synced' ? (
+        <p className="mb-3 text-[13px] text-ink-2">已排入系統日曆{s.syncedAt && `（${s.syncedAt.slice(0, 16).replace('T', ' ')}）`}；修改排程會自動更新同一個事件。</p>
+      ) : s.syncStatus === 'failed' ? (
+        <p className="mb-3 rounded-[10px] bg-danger-50 px-3 py-2 text-[13px] text-danger">同步失敗：{s.syncError}</p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {!cancelled && (calendarConfigured ? (
+          <Button size="sm" variant={s.syncStatus === 'synced' ? 'secondary' : 'primary'} loading={busy} icon={<RefreshCw className="size-3.5" />} onClick={onSync}>
+            {s.syncStatus === 'synced' ? '重新同步' : '排入 Google 日曆'}
+          </Button>
+        ) : (
+          <Button size="sm" variant="primary" icon={<CalendarCheck2 className="size-3.5" />} onClick={onSettings}>前往設定日曆</Button>
+        ))}
+        {!cancelled && (
+          <a href={personalCalendarLink(s, cases)} target="_blank" rel="noopener" className="inline-flex h-8 items-center gap-1.5 rounded-full border border-line bg-white px-3 text-[13px] font-medium text-ink hover:border-pine/40">
+            <CalendarPlus className="size-3.5" />加入我的 Google 日曆
+          </a>
+        )}
+      </div>
+    </section>
   );
 }
 

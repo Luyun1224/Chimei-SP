@@ -155,6 +155,50 @@ describe('排程中直接輸入 SP 姓名', () => {
   });
 });
 
+describe('同一場次多個教案', () => {
+  it('每個教案各自的 SP 產生明細並記錄教案；編輯可增減教案；統計依明細教案', () => {
+    const r = ok(svc.dispatch('session.save', { input: { ...input([]), topic: undefined, cases: [
+      { topic: '胸痛病史詢問', spIds: [], newSpNames: ['甲', '乙'] },
+      { topic: '腹痛身體檢查', spIds: [], newSpNames: ['丙'] },
+    ] }, requestId: 'm-1' }));
+    const s = r.sessions![0];
+    expect(s.topic).toBe('胸痛病史詢問、腹痛身體檢查');
+    expect(state.tables.assignments.map((a) => `${a.spNameSnapshot}:${a.topic}`).sort()).toEqual(['丙:腹痛身體檢查', '乙:胸痛病史詢問', '甲:胸痛病史詢問']);
+    expect(cal.events).toHaveLength(1);
+    expect(cal.events[0].description).toContain('・腹痛身體檢查：丙');
+
+    // 編輯：乙改演腹痛、刪除甲、新增第三個教案
+    const ids = Object.fromEntries(state.tables.sps.map((p) => [p.name, p.spId]));
+    ok(svc.dispatch('session.save', { sessionId: s.sessionId, expectedVersion: s.version, requestId: 'm-2', input: { ...input([]), topic: undefined, cases: [
+      { topic: '腹痛身體檢查', spIds: [ids['丙'], ids['乙']] },
+      { topic: '壞消息告知', spIds: [], newSpNames: ['丁'] },
+    ] } }));
+    const live = state.tables.assignments.filter((a) => !a.isDeleted).map((a) => `${a.spNameSnapshot}:${a.topic}`).sort();
+    expect(live).toEqual(['丁:壞消息告知', '丙:腹痛身體檢查', '乙:腹痛身體檢查']);
+    expect(cal.events).toHaveLength(1);
+    expect(state.tables.sessions[0].topic).toBe('腹痛身體檢查、壞消息告知');
+
+    // 同一場次重複教案名稱 → 驗證錯誤
+    expect(svc.dispatch('session.save', { input: { ...input([]), cases: [{ topic: 'A', spIds: [ids['甲']] }, { topic: 'A', spIds: [ids['乙']] }] }, requestId: 'm-3' }).ok).toBe(false);
+  });
+
+  it('日曆未設定時儲存為「未設定」，設定後可批次排入', () => {
+    ok(svc.dispatch('settings.save', { patch: { calendarId: '' } }));
+    const a = addSp('甲');
+    createSession([a.spId]);
+    createSession([a.spId], { checkinTime: '13:00', startTime: '13:30', endTime: '15:00', topic: '糖尿病衛教' });
+    expect(state.tables.sessions.every((x) => x.syncStatus === 'disabled')).toBe(true);
+    expect(svc.dispatch('session.resyncAll', {}).ok).toBe(false);
+    ok(svc.dispatch('settings.save', { patch: { calendarId: 'primary' } }));
+    const r = ok(svc.dispatch('session.resyncAll', {}));
+    expect(r.synced).toBe(2);
+    expect(r.remaining).toBe(0);
+    expect(cal.events).toHaveLength(2);
+    expect(ok(svc.dispatch('session.resyncAll', {})).synced).toBe(0); // 已同步者不重複建立
+    expect(cal.events).toHaveLength(2);
+  });
+});
+
 describe('衝突與重複偵測', () => {
   it('同一 SP 同時段排程衝突需確認', () => {
     const a = addSp('王小明');

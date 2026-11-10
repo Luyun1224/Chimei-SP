@@ -76,7 +76,7 @@ function buildEnv(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): Env {
       if (!settingsCal) calendarError = '尚未設定 Calendar ID';
       else {
         try {
-          const cal = CalendarApp.getCalendarById(settingsCal);
+          const cal = settingsCal === 'primary' ? CalendarApp.getDefaultCalendar() : CalendarApp.getCalendarById(settingsCal);
           if (!cal) calendarError = '找不到行事曆或沒有權限';
           else {
             calendarOk = true;

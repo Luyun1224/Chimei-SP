@@ -4,7 +4,8 @@ import type { CalendarGateway } from '../ports';
 const TAG = 'spHubSessionId';
 
 function getCal(calendarId: string) {
-  const cal = CalendarApp.getCalendarById(calendarId);
+  // 'primary'：使用目前登入管理員自己的主要日曆
+  const cal = calendarId === 'primary' ? CalendarApp.getDefaultCalendar() : CalendarApp.getCalendarById(calendarId);
   if (!cal) throw new Error(`找不到行事曆或沒有權限：${calendarId}（請確認已將此行事曆以「變更活動」權限分享給操作中的管理員帳號）`);
   return cal;
 }

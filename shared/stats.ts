@@ -40,6 +40,11 @@ export interface AnnualStats {
   statusCounts: Record<SessionStatus, number>;
 }
 
+/** 明細的教案：同一場次可有多個教案；舊資料沒有時沿用排程的教案 */
+export function topicOf(a: { topic?: string }, s: { topic: string } | undefined): string {
+  return a.topic || s?.topic || '';
+}
+
 export function isCountable(a: Assignment, s: Session | undefined): boolean {
   return (
     !!s &&
@@ -86,8 +91,7 @@ export function computeStats(
     !s.isDeleted &&
     yearOf(s.date) === f.year &&
     (!f.month || monthOf(s.date) === f.month) &&
-    (!f.unit || s.unit === f.unit) &&
-    (!f.topic || s.topic === f.topic);
+    (!f.unit || s.unit === f.unit);
 
   const monthly = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, sessions: 0, personTimes: 0, minutes: 0 }));
   const monthSeen = Array.from({ length: 12 }, () => new Set<string>());
@@ -100,6 +104,7 @@ export function computeStats(
     const s = sessionMap.get(a.sessionId);
     if (!s || !sessionInScope(s)) continue;
     if (f.spId && a.spId !== f.spId) continue;
+    if (f.topic && topicOf(a, s) !== f.topic) continue;
     if (needsVerification(a, s)) unverified++;
     if (!isCountable(a, s)) continue;
     const m = a.approvedMinutes as number;
@@ -115,7 +120,7 @@ export function computeStats(
     }
     inc(bySp, a.spId, spMap.get(a.spId)?.name || a.spNameSnapshot, s.sessionId, m, seenSp);
     inc(byUnit, s.unit, s.unit, s.sessionId, m, seenUnit);
-    inc(byTopic, s.topic, s.topic, s.sessionId, m, seenTopic);
+    inc(byTopic, topicOf(a, s), topicOf(a, s), s.sessionId, m, seenTopic);
   }
 
   const statusCounts: Record<SessionStatus, number> = { scheduled: 0, completed: 0, cancelled: 0 };
@@ -123,6 +128,7 @@ export function computeStats(
   for (const s of data.sessions) {
     if (!sessionInScope(s)) continue;
     if (f.spId && !data.assignments.some((a) => a.sessionId === s.sessionId && a.spId === f.spId && !a.isDeleted)) continue;
+    if (f.topic && !data.assignments.some((a) => a.sessionId === s.sessionId && !a.isDeleted && topicOf(a, s) === f.topic)) continue;
     statusCounts[s.status]++;
     if (s.status === 'scheduled' && s.date < today) awaitingCompletion++;
   }
@@ -219,7 +225,7 @@ export function computeProfile(
     const m = a.approvedMinutes as number;
     lifeMin += m;
     lifePT++;
-    topics.add(s.topic);
+    topics.add(topicOf(a, s));
     if (s.date > lastDate) lastDate = s.date;
     const y = yearOf(s.date);
     const yr = yearly.get(y) || { year: y, minutes: 0, personTimes: 0 };
@@ -232,7 +238,7 @@ export function computeProfile(
       yearMin += m;
       monthly[monthOf(s.date) - 1].minutes += m;
       monthly[monthOf(s.date) - 1].personTimes++;
-      inc(byTopic, s.topic, s.topic, s.sessionId, m, seenT);
+      inc(byTopic, topicOf(a, s), topicOf(a, s), s.sessionId, m, seenT);
       inc(byUnit, s.unit, s.unit, s.sessionId, m, seenU);
     }
   }

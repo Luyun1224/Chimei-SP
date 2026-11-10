@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Download, Printer, X } from 'lucide-react';
 import type { SessionStatus } from '../../shared/types';
-import { computeStats, inactiveSps, isCountable, type Row } from '../../shared/stats';
+import { computeStats, inactiveSps, isCountable, topicOf, type Row } from '../../shared/stats';
 import { fmtDate, fmtHours, minutesToHours, monthOf, rocYear, yearOf } from '../../shared/time';
 import { useSnap, spName } from '../lib/store';
 import { navigate, type Route } from '../lib/router';
@@ -36,13 +36,13 @@ export default function Analytics({ route }: { route: Route }) {
 
   const years = useMemo(() => [...new Set([yearOf(snap.today), ...snap.sessions.map((s) => yearOf(s.date))])].sort((a, b) => b - a), [snap]);
   const units = [...new Set(snap.sessions.map((s) => s.unit))].sort();
-  const topics = [...new Set(snap.sessions.map((s) => s.topic))].sort();
+  const topics = [...new Set(snap.assignments.filter((a) => !a.isDeleted).map((a) => topicOf(a, d.sessionMap.get(a.sessionId))).filter(Boolean))].sort();
 
   // 明細（採用與 KPI 相同的篩選；可另外以排程狀態篩選）
   const detail = useMemo(() => snap.assignments
     .filter((a) => !a.isDeleted)
     .map((a) => ({ a, s: d.sessionMap.get(a.sessionId)! }))
-    .filter(({ a, s }) => s && yearOf(s.date) === f.year && (!f.month || monthOf(s.date) === f.month) && (!f.spId || a.spId === f.spId) && (!f.unit || s.unit === f.unit) && (!f.topic || s.topic === f.topic) && (!f.status || s.status === f.status))
+    .filter(({ a, s }) => s && yearOf(s.date) === f.year && (!f.month || monthOf(s.date) === f.month) && (!f.spId || a.spId === f.spId) && (!f.unit || s.unit === f.unit) && (!f.topic || topicOf(a, s) === f.topic) && (!f.status || s.status === f.status))
     .sort((x, y) => (y.s.date + y.s.startTime).localeCompare(x.s.date + x.s.startTime)), [snap, d, f]);
 
   const spRows = useMemo(() => {
@@ -60,7 +60,7 @@ export default function Analytics({ route }: { route: Route }) {
   const exportDetail = () => {
     download(`SP年度成果_${f.year}_明細.csv`, toCsv(
       ['演出日期', '申請單位', '教案主題', 'SP', '排程狀態', '出席', '核定狀態', '核定分鐘', '計入實績'],
-      detail.map(({ a, s }) => [s.date, s.unit, s.topic, spName(d, a), SESSION_STATUS[s.status].label, a.attendance, a.verifyStatus, a.approvedMinutes ?? '', isCountable(a, s) ? '是' : '否']),
+      detail.map(({ a, s }) => [s.date, s.unit, topicOf(a, s), spName(d, a), SESSION_STATUS[s.status].label, a.attendance, a.verifyStatus, a.approvedMinutes ?? '', isCountable(a, s) ? '是' : '否']),
     ));
   };
 
@@ -215,7 +215,7 @@ export default function Analytics({ route }: { route: Route }) {
             <tbody>
               {detail.slice(0, 500).map(({ a, s }) => (
                 <tr key={a.assignmentId} className={cx(!isCountable(a, s) && 'text-ink-3')}>
-                  <td className="num whitespace-nowrap">{fmtDate(s.date)}</td><td>{s.topic}</td><td className="max-md:hidden">{s.unit}</td><td>{spName(d, a)}</td>
+                  <td className="num whitespace-nowrap">{fmtDate(s.date)}</td><td>{topicOf(a, s)}</td><td className="max-md:hidden">{s.unit}</td><td>{spName(d, a)}</td>
                   <td><span className="flex flex-wrap gap-1"><Badge tone={SESSION_STATUS[s.status].tone}>{SESSION_STATUS[s.status].label}</Badge>{a.attendance === 'absent' && <Badge tone="danger">缺席</Badge>}</span></td>
                   <td className="num text-right">{isCountable(a, s) ? `${fmtHours(a.approvedMinutes!)} 小時` : a.verifyStatus === 'verified' ? '不計入' : '未核定'}</td>
                 </tr>

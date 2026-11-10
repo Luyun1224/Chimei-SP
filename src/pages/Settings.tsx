@@ -20,6 +20,7 @@ export default function Settings() {
   const [busy, setBusy] = useState('');
   useEffect(() => setForm(snap.settings), [snap.settings]);
   const dirty = JSON.stringify(form) !== JSON.stringify(snap.settings);
+  const unsynced = snap.sessions.filter((x) => x.status !== 'cancelled' && x.syncStatus !== 'synced').length;
 
   const save = async () => {
     setSaving(true);
@@ -63,9 +64,35 @@ export default function Settings() {
         <Card>
           <CardHead eyebrow="Google Calendar" title={<span className="flex items-center gap-2"><CalendarCog className="size-5 text-pine" />行事曆同步</span>} />
           <div className="space-y-4">
-            <Field label="Calendar ID" hint="在 Google 日曆 → 設定 → 整合日曆 中複製，例如 xxxx@group.calendar.google.com。建議建立專用的「SP 演出」行事曆，並以「變更活動」權限分享給所有管理員。">
-              <input className="field font-mono text-[13px]" value={form.calendarId} onChange={(e) => setForm({ ...form, calendarId: e.target.value.trim() })} placeholder="尚未設定" />
-            </Field>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button type="button" onClick={() => setForm({ ...form, calendarId: 'primary' })} className={`rounded-[14px] border p-3 text-left transition ${form.calendarId === 'primary' ? 'border-pine bg-pine-50 ring-2 ring-pine/15' : 'border-line bg-white hover:border-pine/40'}`}>
+                <div className="text-[14px] font-semibold">使用我的 Google 日曆</div>
+                <div className="mt-0.5 text-[12px] text-ink-3">最簡單：排程直接排入目前登入帳號的主要日曆</div>
+              </button>
+              <button type="button" onClick={() => form.calendarId === 'primary' && setForm({ ...form, calendarId: '' })} className={`rounded-[14px] border p-3 text-left transition ${form.calendarId && form.calendarId !== 'primary' ? 'border-pine bg-pine-50 ring-2 ring-pine/15' : 'border-line bg-white hover:border-pine/40'}`}>
+                <div className="text-[14px] font-semibold">使用共用日曆</div>
+                <div className="mt-0.5 text-[12px] text-ink-3">多位管理員共用時建議，填入下方日曆 ID</div>
+              </button>
+            </div>
+            {form.calendarId !== 'primary' && (
+              <Field label="共用日曆 ID" hint="在 Google 日曆 → 設定 → 整合日曆 中複製，例如 xxxx@group.calendar.google.com，並以「變更活動」權限分享給所有管理員。">
+                <input className="field font-mono text-[13px]" value={form.calendarId} onChange={(e) => setForm({ ...form, calendarId: e.target.value.trim() })} placeholder="尚未設定" />
+              </Field>
+            )}
+            <div className="flex flex-wrap items-center gap-2 rounded-[14px] bg-mist/60 p-3">
+              <span className="mr-auto text-[13px] text-ink-2">已建立但尚未排入日曆的排程：<b className="num">{unsynced}</b> 筆</span>
+              <Button size="sm" variant="primary" loading={busy === 'syncAll'} disabled={!snap.settings.calendarId || !unsynced || dirty} onClick={() => action('syncAll', async () => {
+                let total = 0, failed = 0;
+                for (let round = 0; round < 20; round++) {
+                  const r = await mutate('session.resyncAll', { limit: 30 });
+                  total += r.synced;
+                  failed += r.failed;
+                  if (!r.remaining || r.synced + r.failed === 0) break;
+                }
+                toast(failed ? 'error' : 'success', `已排入 ${total} 筆${failed ? `，${failed} 筆失敗（請至排程詳情查看原因）` : ''}`);
+              })}>全部排入日曆</Button>
+              {dirty && <span className="w-full text-[12px] text-warn">請先儲存設定</span>}
+            </div>
             <label className="flex items-start gap-3 rounded-[14px] bg-mist/60 p-3">
               <input type="checkbox" className="mt-1 size-4 accent-[#284A45]" checked={form.adminReminderEnabled} onChange={(e) => setForm({ ...form, adminReminderEnabled: e.target.checked })} />
               <span className="text-[14px]">

@@ -62,6 +62,8 @@ export interface Assignment {
   spId: string;
   /** 建立當下的 SP 姓名快照，SP 改名不影響歷史顯示；統計一律以 spId 關聯 */
   spNameSnapshot: string;
+  /** 此 SP 演出的教案（同一場次可有多個教案）；空白時沿用排程的教案主題 */
+  topic: string;
   attendance: Attendance;
   actualStart: string;
   actualEnd: string;
@@ -149,18 +151,30 @@ export interface SpInput {
   note?: string;
 }
 
+/** 場次內的一個教案與其 SP */
+export interface CaseInput {
+  topic: string;
+  spIds: string[];
+  /** 直接輸入、尚未建檔的 SP 姓名 */
+  newSpNames?: string[];
+}
+
 export interface SessionInput {
   date: string;
   unit: string;
-  topic: string;
+  /** 舊版單一教案欄位；有 cases 時由各教案自動彙總 */
+  topic?: string;
   checkinTime: string;
   startTime: string;
   endTime: string;
   location: string;
   note?: string;
-  spIds: string[];
+  /** 舊版：單一教案時的 SP；有 cases 時忽略 */
+  spIds?: string[];
   /** 直接輸入、尚未建檔的 SP 姓名；儲存時自動建立 SP 主檔（同名已存在則沿用） */
   newSpNames?: string[];
+  /** 同一場次的多個教案，各自有 SP */
+  cases?: CaseInput[];
 }
 
 export interface VerifyInput {
@@ -223,6 +237,7 @@ export interface ApiActions {
   'session.delete': { req: { sessionId: string; reason: string; expectedVersion: number }; res: MutationResult };
   'session.complete': { req: { sessionId: string; expectedVersion: number }; res: MutationResult };
   'session.resync': { req: { sessionId: string }; res: MutationResult };
+  'session.resyncAll': { req: { limit?: number }; res: MutationResult & { synced: number; failed: number; remaining: number } };
   'session.verifyAllAsScheduled': { req: { sessionId: string }; res: MutationResult };
   'assignment.verify': { req: VerifyInput; res: MutationResult };
   'assignment.unverify': { req: { assignmentId: string; reason: string; expectedVersion: number }; res: MutationResult };
