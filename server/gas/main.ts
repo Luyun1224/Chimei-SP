@@ -277,7 +277,7 @@ export function setupSpreadsheet() {
   }
   Logger.log('✅ 初始化完成（%s）：%s', bound ? '使用綁定的試算表' : '使用 SPREADSHEET_ID 指定的試算表', ss.getUrl());
   Logger.log('管理員：%s', adminList().join(', ') || '（未設定，請於 Script Properties 設定 ADMIN_EMAILS）');
-  Logger.log('🔑 裝置綁定存取碼：%s（在 GitHub 網址輸入一次即可綁定裝置）', accessCode());
+  Logger.log('🔗 專屬網址（開啟即直接進入）：https://luyun1224.github.io/Chimei-SP/#k=%s', accessCode());
   return ss.getUrl();
 }
 
@@ -462,13 +462,13 @@ function pairDevice(req: { code?: string; device?: string }) {
 /** 在編輯器執行：查看存取碼（可分享給要綁定的裝置） */
 export function showAccessCode() {
   const c = accessCode();
-  Logger.log('🔑 存取碼：%s（在 GitHub 網址輸入一次即可綁定裝置）', c);
+  Logger.log('🔗 專屬網址（開啟即直接進入，請勿外流）：https://luyun1224.github.io/Chimei-SP/#k=%s', c);
   return c;
 }
 
 /** 在編輯器執行：更換存取碼，所有已綁定裝置立即失效 */
 export function rotateAccessCode() {
   const c = accessCode(true);
-  Logger.log('🔑 新存取碼：%s（舊的綁定已全部失效）', c);
+  Logger.log('🔗 新的專屬網址：https://luyun1224.github.io/Chimei-SP/#k=%s（舊網址與裝置已全部失效）', c);
   return c;
 }

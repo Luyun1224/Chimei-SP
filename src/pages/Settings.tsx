@@ -4,6 +4,7 @@ import type { AuditEntry, HealthReport, Settings as S } from '../../shared/types
 import { useSnap } from '../lib/store';
 import { call } from '../lib/api';
 import { copyText, download } from '../lib/csv';
+import { personalLink } from '../lib/remote';
 import { WEB_APP_URL } from '../config';
 import { AuditList } from '../features/sessions';
 import { useConfirm, useToast } from '../components/overlay';
@@ -229,7 +230,7 @@ function AccessCodeCard() {
     try {
       const r = await call('system.accessCode', { rotate });
       setCode(r.code);
-      if (rotate) toast('success', '已更換存取碼，其他裝置需用新存取碼重新綁定');
+      if (rotate) toast('success', '已更換專屬網址，請改用新網址開啟');
     } catch (e) {
       toast('error', (e as Error).message);
     } finally {
@@ -238,15 +239,15 @@ function AccessCodeCard() {
   };
   return (
     <Card className="mb-4">
-      <CardHead eyebrow="Device binding" title="裝置綁定存取碼" />
-      <p className="mb-3 text-[13px] text-ink-2">新手機或電腦第一次開啟 GitHub 網址時輸入這組存取碼，即可綁定該裝置；之後開網址直接進入。請只告訴需要使用的同仁。</p>
+      <CardHead eyebrow="Personal link" title="專屬網址（免登入）" />
+      <p className="mb-3 text-[13px] text-ink-2">用這個專屬網址開啟，任何手機或電腦都會直接進入儀表板，不需輸入任何東西。建議加入書籤或手機主畫面；請只傳給需要使用的同仁。</p>
       <div className="flex flex-wrap items-center gap-2">
-        {code ? <code className="num rounded-[10px] bg-mist px-4 py-2 text-[20px] tracking-[0.25em]">{code}</code> : <Button size="sm" loading={busy} onClick={() => load(false)}>顯示存取碼</Button>}
-        {code && <Button size="sm" onClick={async () => toast((await copyText(code)) ? 'success' : 'error', '已複製存取碼')}>複製</Button>}
+        {code ? <code className="num max-w-full break-all rounded-[10px] bg-mist px-3 py-2 text-[13px]">{personalLink(code)}</code> : <Button size="sm" loading={busy} onClick={() => load(false)}>顯示專屬網址</Button>}
+        {code && <Button size="sm" onClick={async () => toast((await copyText(personalLink(code))) ? 'success' : 'error', '已複製專屬網址')}>複製網址</Button>}
         <Button size="sm" variant="ghost" className="text-danger" loading={busy && !!code} onClick={async () => {
-          const r = await confirm({ title: '更換存取碼？', tone: 'danger', confirmLabel: '更換', body: '所有已綁定的裝置（包含這一台）都會失效，需要用新的存取碼重新綁定。手機遺失或人員異動時使用。' });
+          const r = await confirm({ title: '更換專屬網址？', tone: 'danger', confirmLabel: '更換', body: '舊的專屬網址與所有已使用過的裝置（包含這一台）都會失效，需改用新的專屬網址開啟。網址外流、手機遺失或人員異動時使用。' });
           if (r.ok) await load(true);
-        }}>更換存取碼（撤銷所有裝置）</Button>
+        }}>更換專屬網址（撤銷所有裝置）</Button>
       </div>
     </Card>
   );

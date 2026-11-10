@@ -2,7 +2,7 @@ import { Component, useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { Lock, RefreshCw } from 'lucide-react';
 import { DataProvider, useData } from './lib/store';
-import { isRemote, pairDevice, signOut } from './lib/remote';
+import { isRemote, pairDevice, signOut, takePendingCode } from './lib/remote';
 import { useRoute } from './lib/router';
 import { ConfirmProvider, ToastProvider } from './components/overlay';
 import { Layout } from './components/Layout';
@@ -86,6 +86,27 @@ function LoginScreen({ onDone }: { onDone: () => Promise<void> }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [auto, setAuto] = useState(false);
+  // 由專屬網址開啟：自動綁定，直接進入儀表板
+  useEffect(() => {
+    const pending = takePendingCode();
+    if (!pending) return;
+    setAuto(true);
+    pairDevice(pending)
+      .then(() => onDone())
+      .catch((e) => {
+        setErr((e as Error).message);
+        setAuto(false);
+      });
+  }, [onDone]);
+  if (auto) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-cream p-6 text-[15px] text-pine">
+        <span className="mr-2 inline-block size-4 animate-spin rounded-full border-2 border-pine/20 border-t-pine" />
+        SP Performance Hub 載入中…
+      </div>
+    );
+  }
   const submit = async () => {
     if (!code.trim()) return setErr('請輸入存取碼');
     setBusy(true);
@@ -118,7 +139,7 @@ function LoginScreen({ onDone }: { onDone: () => Promise<void> }) {
         />
         <Button type="submit" variant="gold" className="mt-4 w-full" loading={busy}>綁定此裝置</Button>
         {err && <p role="alert" className="mt-3 rounded-[12px] bg-white/10 px-3 py-2 text-[13px] text-[#f6c7bf]">{err}</p>}
-        <p className="mt-5 text-[12px] leading-relaxed text-white/50">存取碼可在 Apps Script 執行 showAccessCode 查看，或由已綁定裝置的「系統設定」查看。請勿外流。</p>
+        <p className="mt-5 text-[12px] leading-relaxed text-white/50">使用「專屬網址」開啟就不需要輸入。專屬網址可在 Apps Script 執行 showAccessCode 查看，或由已綁定裝置的「系統設定」複製。請勿外流。</p>
       </form>
     </div>
   );

@@ -37,6 +37,22 @@ function captureFromHash(): void {
 }
 captureFromHash();
 
+/** 專屬網址：https://…/Chimei-SP/#k=存取碼 → 開啟即自動綁定，不需輸入 */
+const PENDING = 'sp-hub-pending-code';
+(function captureKey() {
+  if (typeof window === 'undefined') return;
+  const m = /^#k=([A-Za-z0-9-]+)/.exec(window.location.hash);
+  if (!m) return;
+  sessionStorage.setItem(PENDING, m[1]);
+  history.replaceState(null, '', window.location.pathname + window.location.search + '#/overview');
+})();
+export function takePendingCode(): string {
+  const c = sessionStorage.getItem(PENDING) || '';
+  sessionStorage.removeItem(PENDING);
+  return c;
+}
+export const personalLink = (code: string) => `https://luyun1224.github.io/Chimei-SP/#k=${code}`;
+
 function session(): Sess | null {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || 'null') as Sess | null;
