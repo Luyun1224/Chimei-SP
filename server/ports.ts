@@ -22,6 +22,8 @@ export interface Env {
   /** 互斥鎖：多步驟寫入須在鎖內完成 */
   withLock<T>(fn: () => T): T;
   backup?(): { name: string; url: string };
+  /** 裝置綁定存取碼（rotate=true 時更換，所有裝置需重新綁定） */
+  accessCode?(rotate?: boolean): string;
   health?(): import('../shared/types').HealthReport;
 }
 

@@ -7,10 +7,12 @@ const b64 = (b: Buffer) => b.toString('base64').replace(/\+/g, '-').replace(/\//
 let props: Record<string, string>;
 let user = '';
 let lastTemplate: Record<string, unknown> = {};
+let cache: Record<string, string> = {};
 
 beforeEach(() => {
   props = { ADMIN_EMAILS: 'admin@x.org', API_URL: 'https://script.google.com/macros/s/API/exec' };
   user = 'admin@x.org';
+  cache = {};
   Object.assign(globalThis as Record<string, unknown>, {
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k: string) => props[k] ?? null, setProperty: (k: string, v: string) => (props[k] = v) }) },
     Session: { getActiveUser: () => ({ getEmail: () => user }) },
@@ -30,6 +32,7 @@ beforeEach(() => {
     },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s: string) => ({ setMimeType: () => ({ body: s }) }) },
     SpreadsheetApp: { getActiveSpreadsheet: () => { throw new Error('no sheet in test'); } },
+    CacheService: { getScriptCache: () => ({ get: (k: string) => cache[k] ?? null, put: (k: string, v: string) => (cache[k] = v) }) },
   });
 });
 
@@ -39,6 +42,26 @@ const login = (ret = 'https://luyun1224.github.io/Chimei-SP/') => {
 };
 const post = (body: unknown) => JSON.parse((doPost({ postData: { contents: JSON.stringify(body) } } as never) as unknown as { body: string }).body);
 const tokenFrom = (back: string) => decodeURIComponent(/sphub_token=([^&]+)/.exec(back)![1]);
+
+describe('裝置綁定（存取碼）', () => {
+  it('正確存取碼取得長期權杖；錯誤會拒絕並在多次後鎖定；更換存取碼撤銷所有裝置', () => {
+    expect(post({ action: 'auth.pair', code: 'X' }).error.code).toBe('NOT_CONFIGURED');
+    props.ACCESS_CODE = 'ABCD-2345';
+    expect(post({ action: 'auth.pair', code: 'WRONG' }).error.code).toBe('VALIDATION');
+    const r = post({ action: 'auth.pair', code: 'abcd2345', device: 'iPhone <b>' });
+    expect(r.ok).toBe(true);
+    const token = r.data.token;
+    expect(post({ token, action: 'bootstrap' }).error.code).toBe('NOT_CONFIGURED'); // 已通過身分檢查
+    // 裝置權杖不受管理員名單限制（以存取碼授權）
+    props.ADMIN_EMAILS = 'other@x.org';
+    expect(post({ token, action: 'bootstrap' }).error.code).toBe('NOT_CONFIGURED');
+    // 更換存取碼 → 立即失效
+    props.ACCESS_CODE = 'ZZZZ-9999';
+    expect(post({ token, action: 'bootstrap' }).error.code).toBe('UNAUTHENTICATED');
+    for (let i = 0; i < 10; i++) post({ action: 'auth.pair', code: 'nope' });
+    expect(post({ action: 'auth.pair', code: 'ZZZZ-9999' }).error.message).toContain('次數過多');
+  });
+});
 
 describe('登入權杖', () => {
   it('管理員登入後帶回權杖；權杖可通過驗證，竄改或非管理員會被拒絕', () => {
@@ -59,15 +82,15 @@ describe('登入權杖', () => {
     expect(post({ token, action: 'bootstrap' }).error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('權杖 90 天有效，剩不到 60 天時自動續期', () => {
+  it('權杖 365 天有效，剩不到 300 天時自動續期', () => {
     const token = tokenFrom(String(login().back));
     expect(post({ token, action: 'bootstrap' }).renewToken).toBeUndefined();
     const real = Date.now;
     try {
-      Date.now = () => real() + 40 * 86400000;
+      Date.now = () => real() + 70 * 86400000;
       const r = post({ token, action: 'bootstrap' });
       expect(r.renewToken).toBeTruthy();
-      Date.now = () => real() + 91 * 86400000;
+      Date.now = () => real() + 366 * 86400000;
       expect(post({ token, action: 'bootstrap' }).error.code).toBe('UNAUTHENTICATED');
       expect(post({ token: r.renewToken, action: 'bootstrap' }).error.code).toBe('NOT_CONFIGURED'); // 續期後的權杖仍有效
     } finally {

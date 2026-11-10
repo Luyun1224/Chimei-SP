@@ -24,11 +24,14 @@ var SPHub = (() => {
   // server/gas/main.ts
   var main_exports = {};
   __export(main_exports, {
+    accessCode: () => accessCode,
     api: () => api,
     doGet: () => doGet,
     doPost: () => doPost,
     healthCheck: () => healthCheck,
-    setupSpreadsheet: () => setupSpreadsheet
+    rotateAccessCode: () => rotateAccessCode,
+    setupSpreadsheet: () => setupSpreadsheet,
+    showAccessCode: () => showAccessCode
   });
 
   // shared/time.ts
@@ -897,6 +900,12 @@ var SPHub = (() => {
         audit("system", "backup", "backup", null, r);
         return r;
       },
+      "system.accessCode": ({ rotate }) => {
+        if (!env.accessCode) throw new AppError("NOT_CONFIGURED", "此環境不使用存取碼");
+        const code = env.accessCode(!!rotate);
+        if (rotate) audit("system", "access-code", "rotate_access_code", null, null, "更換存取碼，所有已綁定裝置需重新綁定");
+        return { code };
+      },
       "system.health": () => {
         if (!env.health) throw new AppError("NOT_CONFIGURED", "此環境不支援健康檢查");
         return env.health();
@@ -906,7 +915,7 @@ var SPHub = (() => {
       try {
         const email = env.user();
         if (!email) throw new AppError("UNAUTHENTICATED", "無法取得登入身分，請以 Google 帳號登入");
-        if (!env.isAdmin(email)) throw new AppError("FORBIDDEN", `帳號 ${email} 未獲授權使用本系統，請聯絡臨床技能中心管理員`);
+        if (!email.startsWith("device:") && !env.isAdmin(email)) throw new AppError("FORBIDDEN", `帳號 ${email} 未獲授權使用本系統，請聯絡臨床技能中心管理員`);
         const h = handlers[action];
         if (!h) throw new AppError("VALIDATION", `未知的操作：${String(action)}`);
         return { ok: true, data: h(payload || {}) };
@@ -1371,6 +1380,7 @@ var SPHub = (() => {
           lock.releaseLock();
         }
       },
+      accessCode: (rotate) => accessCode(!!rotate),
       backup() {
         const stamp = Utilities.formatDate(/* @__PURE__ */ new Date(), TZ, "yyyyMMdd-HHmm");
         const copy = SpreadsheetApp.create(`SP Performance Hub 備份 ${stamp}`);
@@ -1557,6 +1567,7 @@ var SPHub = (() => {
     }
     Logger.log("✅ 初始化完成（%s）：%s", bound ? "使用綁定的試算表" : "使用 SPREADSHEET_ID 指定的試算表", ss.getUrl());
     Logger.log("管理員：%s", adminList().join(", ") || "（未設定，請於 Script Properties 設定 ADMIN_EMAILS）");
+    Logger.log("🔑 裝置綁定存取碼：%s（在 GitHub 網址輸入一次即可綁定裝置）", accessCode());
     return ss.getUrl();
   }
   function healthCheck() {
@@ -1565,8 +1576,9 @@ var SPHub = (() => {
     Logger.log(JSON.stringify(r, null, 2));
     return r;
   }
-  var TOKEN_DAYS = 90;
-  var RENEW_BELOW_DAYS = 60;
+  var TOKEN_DAYS = 365;
+  var RENEW_BELOW_DAYS = 300;
+  var DEVICE_PREFIX = "device:";
   var ALLOWED_RETURN = [/^https:\/\/luyun1224\.github\.io\/Chimei-SP\//, /^http:\/\/(localhost|127\.0\.0\.1)(:\d{2,5})?\//];
   function tokenSecret() {
     const p = props();
@@ -1580,8 +1592,29 @@ var SPHub = (() => {
   function sign(data) {
     return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(data, tokenSecret())).replace(/=+$/, "");
   }
+  function makeCode() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let c = "";
+    for (let i = 0; i < 8; i++) c += chars[Math.floor(Math.random() * chars.length)];
+    return `${c.slice(0, 4)}-${c.slice(4)}`;
+  }
+  function accessCode(rotate = false) {
+    const p = props();
+    let c = p.getProperty("ACCESS_CODE");
+    if (!c || rotate) {
+      c = makeCode();
+      p.setProperty("ACCESS_CODE", c);
+    }
+    return c;
+  }
+  var normCode = (c) => String(c || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  function codeVersion() {
+    return sign("code:" + normCode(accessCode())).slice(0, 12);
+  }
   function issueToken(email) {
-    const body = Utilities.base64EncodeWebSafe(JSON.stringify({ e: email, x: Date.now() + TOKEN_DAYS * 864e5 }), Utilities.Charset.UTF_8).replace(/=+$/, "");
+    const payload = { e: email, x: Date.now() + TOKEN_DAYS * 864e5 };
+    if (email.startsWith(DEVICE_PREFIX)) payload.v = codeVersion();
+    const body = Utilities.base64EncodeWebSafe(JSON.stringify(payload), Utilities.Charset.UTF_8).replace(/=+$/, "");
     return `${body}.${sign(body)}`;
   }
   function tokenExpiry(token) {
@@ -1600,7 +1633,8 @@ var SPHub = (() => {
       const pad = body + "=".repeat((4 - body.length % 4) % 4);
       const data = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(pad)).getDataAsString("UTF-8"));
       if (!data.e || !data.x || data.x < Date.now()) return null;
-      return String(data.e).toLowerCase();
+      if (String(data.e).startsWith(DEVICE_PREFIX) && data.v !== codeVersion()) return null;
+      return String(data.e).startsWith(DEVICE_PREFIX) ? String(data.e) : String(data.e).toLowerCase();
     } catch {
       return null;
     }
@@ -1649,9 +1683,10 @@ var SPHub = (() => {
     } catch {
       return out({ ok: false, error: { code: "VALIDATION", message: "請求格式錯誤" } });
     }
+    if (req.action === "auth.pair") return out(pairDevice(req));
     const email = verifyToken(req.token || "");
-    if (!email) return out({ ok: false, error: { code: "UNAUTHENTICATED", message: "登入已過期，請重新登入" } });
-    if (!adminList().includes(email)) return out({ ok: false, error: { code: "FORBIDDEN", message: `帳號 ${email} 未獲授權` } });
+    if (!email) return out({ ok: false, error: { code: "UNAUTHENTICATED", message: "此裝置尚未綁定或綁定已失效，請輸入存取碼" } });
+    if (!email.startsWith(DEVICE_PREFIX) && !adminList().includes(email)) return out({ ok: false, error: { code: "FORBIDDEN", message: `帳號 ${email} 未獲授權` } });
     if (tokenExpiry(req.token || "") - Date.now() < RENEW_BELOW_DAYS * 864e5) {
       const renewToken = issueToken(email);
       const plain = out;
@@ -1675,6 +1710,28 @@ var SPHub = (() => {
       return out({ ok: false, error: { code: "NOT_CONFIGURED", message: String(err.message || err) } });
     }
   }
+  function pairDevice(req) {
+    const cache = CacheService.getScriptCache();
+    const fails = Number(cache.get("pair-fail") || 0);
+    if (fails >= 10) return { ok: false, error: { code: "FORBIDDEN", message: "輸入錯誤次數過多，請 1 小時後再試" } };
+    if (!props().getProperty("ACCESS_CODE")) return { ok: false, error: { code: "NOT_CONFIGURED", message: "尚未產生存取碼：請在 Apps Script 執行 setupSpreadsheet，並於執行記錄查看存取碼" } };
+    if (!req.code || normCode(req.code) !== normCode(accessCode())) {
+      cache.put("pair-fail", String(fails + 1), 3600);
+      return { ok: false, error: { code: "VALIDATION", message: "存取碼不正確" } };
+    }
+    const device = String(req.device || "裝置").replace(/[^\p{L}\p{N} ._()-]/gu, "").slice(0, 30) || "裝置";
+    return { ok: true, data: { token: issueToken(`${DEVICE_PREFIX}${device}`) } };
+  }
+  function showAccessCode() {
+    const c = accessCode();
+    Logger.log("🔑 存取碼：%s（在 GitHub 網址輸入一次即可綁定裝置）", c);
+    return c;
+  }
+  function rotateAccessCode() {
+    const c = accessCode(true);
+    Logger.log("🔑 新存取碼：%s（舊的綁定已全部失效）", c);
+    return c;
+  }
   return __toCommonJS(main_exports);
 })();
 
@@ -1683,3 +1740,5 @@ function doPost() { return SPHub.doPost.apply(null, arguments); }
 function api() { return SPHub.api.apply(null, arguments); }
 function setupSpreadsheet() { return SPHub.setupSpreadsheet.apply(null, arguments); }
 function healthCheck() { return SPHub.healthCheck.apply(null, arguments); }
+function showAccessCode() { return SPHub.showAccessCode.apply(null, arguments); }
+function rotateAccessCode() { return SPHub.rotateAccessCode.apply(null, arguments); }

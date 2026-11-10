@@ -55,11 +55,37 @@ export const hasToken = () => !!session();
 export const signedInEmail = () => session()?.email || '';
 export function preloadSignIn() {}
 
-/** 前往 Google 登入（頂層頁面導向，手機也可用） */
+/** 前往 Google 登入（需另設「資料 API」部署；一般改用存取碼綁定裝置） */
 export function signIn(): Promise<void> {
   const back = window.location.origin + window.location.pathname;
   window.location.assign(`${WEB_APP_URL}?login=1&return=${encodeURIComponent(back)}`);
   return new Promise(() => {});
+}
+
+function deviceName(): string {
+  const ua = navigator.userAgent;
+  const kind = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : '裝置';
+  return `${kind} ${new Date().toISOString().slice(0, 10)}`;
+}
+
+/** 以存取碼綁定此裝置：成功後長期保存，之後開網址直接進入 */
+export async function pairDevice(code: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(WEB_APP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'auth.pair', code, device: deviceName() }),
+      redirect: 'follow',
+    });
+  } catch {
+    throw new Error('無法連線系統，請確認網路後重試');
+  }
+  const text = await res.text();
+  if (!text.trim().startsWith('{')) throw new Error('系統回應異常：請確認 Apps Script 部署的執行身分為「我」、存取權為「任何人」，並已發佈新版本');
+  const r = JSON.parse(text) as { ok: boolean; data?: { token: string }; error?: { message: string } };
+  if (!r.ok || !r.data?.token) throw new Error(r.error?.message || '綁定失敗');
+  localStorage.setItem(KEY, JSON.stringify({ token: r.data.token, api: WEB_APP_URL, email: '' } satisfies Sess));
 }
 
 export function signOut() {

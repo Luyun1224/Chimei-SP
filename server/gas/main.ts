@@ -64,6 +64,7 @@ function buildEnv(ss: GoogleAppsScript.Spreadsheet.Spreadsheet, asUser?: string)
         lock.releaseLock();
       }
     },
+    accessCode: (rotate?: boolean) => accessCode(!!rotate),
     backup() {
       const stamp = Utilities.formatDate(new Date(), TZ, 'yyyyMMdd-HHmm');
       const copy = SpreadsheetApp.create(`SP Performance Hub 備份 ${stamp}`);
@@ -276,6 +277,7 @@ export function setupSpreadsheet() {
   }
   Logger.log('✅ 初始化完成（%s）：%s', bound ? '使用綁定的試算表' : '使用 SPREADSHEET_ID 指定的試算表', ss.getUrl());
   Logger.log('管理員：%s', adminList().join(', ') || '（未設定，請於 Script Properties 設定 ADMIN_EMAILS）');
+  Logger.log('🔑 裝置綁定存取碼：%s（在 GitHub 網址輸入一次即可綁定裝置）', accessCode());
   return ss.getUrl();
 }
 
@@ -296,8 +298,9 @@ export function healthCheck() {
 // 權杖密鑰自動產生並只存在 Script Properties；更換密鑰即可讓所有權杖失效。
 
 /** 權杖有效 90 天；使用中會自動續期（剩不到 60 天時換發新權杖），經常使用就不必再登入 */
-const TOKEN_DAYS = 90;
-const RENEW_BELOW_DAYS = 60;
+const TOKEN_DAYS = 365;
+const RENEW_BELOW_DAYS = 300;
+const DEVICE_PREFIX = 'device:';
 const ALLOWED_RETURN = [/^https:\/\/luyun1224\.github\.io\/Chimei-SP\//, /^http:\/\/(localhost|127\.0\.0\.1)(:\d{2,5})?\//];
 
 function tokenSecret(): string {
@@ -312,8 +315,31 @@ function tokenSecret(): string {
 function sign(data: string): string {
   return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(data, tokenSecret())).replace(/=+$/, '');
 }
+// ---- 裝置綁定存取碼：每台裝置輸入一次即綁定，之後開網址直接進入；更換存取碼即撤銷所有裝置 ----
+function makeCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c = '';
+  for (let i = 0; i < 8; i++) c += chars[Math.floor(Math.random() * chars.length)];
+  return `${c.slice(0, 4)}-${c.slice(4)}`;
+}
+export function accessCode(rotate = false): string {
+  const p = props();
+  let c = p.getProperty('ACCESS_CODE');
+  if (!c || rotate) {
+    c = makeCode();
+    p.setProperty('ACCESS_CODE', c);
+  }
+  return c;
+}
+const normCode = (c: string) => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+function codeVersion(): string {
+  return sign('code:' + normCode(accessCode())).slice(0, 12);
+}
+
 function issueToken(email: string): string {
-  const body = Utilities.base64EncodeWebSafe(JSON.stringify({ e: email, x: Date.now() + TOKEN_DAYS * 86400000 }), Utilities.Charset.UTF_8).replace(/=+$/, '');
+  const payload: Record<string, unknown> = { e: email, x: Date.now() + TOKEN_DAYS * 86400000 };
+  if (email.startsWith(DEVICE_PREFIX)) payload.v = codeVersion();
+  const body = Utilities.base64EncodeWebSafe(JSON.stringify(payload), Utilities.Charset.UTF_8).replace(/=+$/, '');
   return `${body}.${sign(body)}`;
 }
 function tokenExpiry(token: string): number {
@@ -330,9 +356,11 @@ function verifyToken(token: string): string | null {
   if (!body || !sig || sign(body) !== sig) return null;
   try {
     const pad = body + '='.repeat((4 - (body.length % 4)) % 4);
-    const data = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(pad)).getDataAsString('UTF-8')) as { e: string; x: number };
+    const data = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(pad)).getDataAsString('UTF-8')) as { e: string; x: number; v?: string };
     if (!data.e || !data.x || data.x < Date.now()) return null;
-    return String(data.e).toLowerCase();
+    // 裝置權杖：存取碼更換後立即失效
+    if (String(data.e).startsWith(DEVICE_PREFIX) && data.v !== codeVersion()) return null;
+    return String(data.e).startsWith(DEVICE_PREFIX) ? String(data.e) : String(data.e).toLowerCase();
   } catch {
     return null;
   }
@@ -380,15 +408,16 @@ function loginPage(returnUrl: string) {
  */
 export function doPost(e: GoogleAppsScript.Events.DoPost) {
   const out = (o: unknown) => ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
-  let req: { token?: string; action?: string; payload?: string } = {};
+  let req: { token?: string; action?: string; payload?: string; code?: string; device?: string } = {};
   try {
     req = JSON.parse(e?.postData?.contents || '{}');
   } catch {
     return out({ ok: false, error: { code: 'VALIDATION', message: '請求格式錯誤' } });
   }
+  if (req.action === 'auth.pair') return out(pairDevice(req as { code?: string; device?: string }));
   const email = verifyToken(req.token || '');
-  if (!email) return out({ ok: false, error: { code: 'UNAUTHENTICATED', message: '登入已過期，請重新登入' } });
-  if (!adminList().includes(email)) return out({ ok: false, error: { code: 'FORBIDDEN', message: `帳號 ${email} 未獲授權` } });
+  if (!email) return out({ ok: false, error: { code: 'UNAUTHENTICATED', message: '此裝置尚未綁定或綁定已失效，請輸入存取碼' } });
+  if (!email.startsWith(DEVICE_PREFIX) && !adminList().includes(email)) return out({ ok: false, error: { code: 'FORBIDDEN', message: `帳號 ${email} 未獲授權` } });
   // 自動續期：使用中的裝置不需重新登入
   if (tokenExpiry(req.token || '') - Date.now() < RENEW_BELOW_DAYS * 86400000) {
     const renewToken = issueToken(email);
@@ -414,4 +443,32 @@ function handlePost(req: { action?: string; payload?: string }, email: string, o
   } catch (err) {
     return out({ ok: false, error: { code: 'NOT_CONFIGURED', message: String((err as Error).message || err) } });
   }
+}
+
+/** 以存取碼綁定裝置；連續輸錯過多會暫時鎖定，防止猜碼 */
+function pairDevice(req: { code?: string; device?: string }) {
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get('pair-fail') || 0);
+  if (fails >= 10) return { ok: false, error: { code: 'FORBIDDEN', message: '輸入錯誤次數過多，請 1 小時後再試' } };
+  if (!props().getProperty('ACCESS_CODE')) return { ok: false, error: { code: 'NOT_CONFIGURED', message: '尚未產生存取碼：請在 Apps Script 執行 setupSpreadsheet，並於執行記錄查看存取碼' } };
+  if (!req.code || normCode(req.code) !== normCode(accessCode())) {
+    cache.put('pair-fail', String(fails + 1), 3600);
+    return { ok: false, error: { code: 'VALIDATION', message: '存取碼不正確' } };
+  }
+  const device = String(req.device || '裝置').replace(/[^\p{L}\p{N} ._()-]/gu, '').slice(0, 30) || '裝置';
+  return { ok: true, data: { token: issueToken(`${DEVICE_PREFIX}${device}`) } };
+}
+
+/** 在編輯器執行：查看存取碼（可分享給要綁定的裝置） */
+export function showAccessCode() {
+  const c = accessCode();
+  Logger.log('🔑 存取碼：%s（在 GitHub 網址輸入一次即可綁定裝置）', c);
+  return c;
+}
+
+/** 在編輯器執行：更換存取碼，所有已綁定裝置立即失效 */
+export function rotateAccessCode() {
+  const c = accessCode(true);
+  Logger.log('🔑 新存取碼：%s（舊的綁定已全部失效）', c);
+  return c;
 }

@@ -530,6 +530,13 @@ export function createService({ repo, env, calendar }: Deps) {
       return r;
     },
 
+    'system.accessCode': ({ rotate }) => {
+      if (!env.accessCode) throw new AppError('NOT_CONFIGURED', '此環境不使用存取碼');
+      const code = env.accessCode(!!rotate);
+      if (rotate) audit('system', 'access-code', 'rotate_access_code', null, null, '更換存取碼，所有已綁定裝置需重新綁定');
+      return { code };
+    },
+
     'system.health': () => {
       if (!env.health) throw new AppError('NOT_CONFIGURED', '此環境不支援健康檢查');
       return env.health();
@@ -541,7 +548,7 @@ export function createService({ repo, env, calendar }: Deps) {
     try {
       const email = env.user();
       if (!email) throw new AppError('UNAUTHENTICATED', '無法取得登入身分，請以 Google 帳號登入');
-      if (!env.isAdmin(email)) throw new AppError('FORBIDDEN', `帳號 ${email} 未獲授權使用本系統，請聯絡臨床技能中心管理員`);
+      if (!email.startsWith('device:') && !env.isAdmin(email)) throw new AppError('FORBIDDEN', `帳號 ${email} 未獲授權使用本系統，請聯絡臨床技能中心管理員`);
       const h = handlers[action] as Handler<A> | undefined;
       if (!h) throw new AppError('VALIDATION', `未知的操作：${String(action)}`);
       return { ok: true, data: h(payload || ({} as ApiActions[A]['req'])) };

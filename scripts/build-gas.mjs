@@ -13,7 +13,7 @@ await build({
   legalComments: 'none',
 });
 
-const exportsList = ['doGet', 'doPost', 'api', 'setupSpreadsheet', 'healthCheck'];
+const exportsList = ['doGet', 'doPost', 'api', 'setupSpreadsheet', 'healthCheck', 'showAccessCode', 'rotateAccessCode'];
 const wrappers = exportsList
   .map((n) => `function ${n}() { return SPHub.${n}.apply(null, arguments); }`)
   .join('\n');

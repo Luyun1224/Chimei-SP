@@ -2,7 +2,7 @@ import { Component, useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { Lock, RefreshCw } from 'lucide-react';
 import { DataProvider, useData } from './lib/store';
-import { isRemote, preloadSignIn, signIn, signOut } from './lib/remote';
+import { isRemote, pairDevice, signOut } from './lib/remote';
 import { useRoute } from './lib/router';
 import { ConfirmProvider, ToastProvider } from './components/overlay';
 import { Layout } from './components/Layout';
@@ -31,7 +31,7 @@ function Pages() {
           <Lock className="mx-auto size-8 text-pine" />
           <h1 className="display mt-3 text-[24px] font-semibold text-pine">無存取權限</h1>
           <p className="mt-2 text-[14px] text-ink-2">{error.message}</p>
-          {isRemote() && <Button className="mt-4" onClick={() => { signOut(); reload(); }}>改用其他 Google 帳號登入</Button>}
+          {isRemote() && <Button className="mt-4" onClick={() => { signOut(); reload(); }}>重新綁定此裝置</Button>}
         </div>
       </div>
     );
@@ -81,38 +81,45 @@ function Pages() {
   );
 }
 
-/** 未登入時自動前往 Google 登入（已登入 Google 的瀏覽器不需輸入任何資料，會自動帶回系統） */
+/** 第一次使用的裝置：輸入存取碼綁定一次，之後開網址直接進入儀表板 */
 function LoginScreen({ onDone }: { onDone: () => Promise<void> }) {
-  const [manual, setManual] = useState(false);
-  useEffect(() => {
-    void onDone;
-    // 避免來回重導：同一分頁 30 秒內只自動嘗試一次，失敗時改顯示按鈕
-    const last = Number(sessionStorage.getItem('sp-hub-auto-login') || 0);
-    if (Date.now() - last < 30_000) return setManual(true);
-    sessionStorage.setItem('sp-hub-auto-login', String(Date.now()));
-    preloadSignIn();
-    void signIn();
-  }, [onDone]);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const submit = async () => {
+    if (!code.trim()) return setErr('請輸入存取碼');
+    setBusy(true);
+    setErr('');
+    try {
+      await pairDevice(code);
+      await onDone();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="flex min-h-screen items-center justify-center bg-cream p-6">
-      <div className="w-full max-w-md overflow-hidden rounded-[28px] bg-pine p-8 text-white shadow-lift">
+      <form className="w-full max-w-md overflow-hidden rounded-[28px] bg-pine p-8 text-white shadow-lift" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-gold">Chi Mei · Clinical Skills</div>
         <h1 className="display mt-3 text-[30px] font-semibold leading-tight">SP Performance Hub</h1>
         <p className="mt-1 text-[14px] text-white/70">標準化病人演出歷程管理平台</p>
-        {manual ? (
-          <>
-            <p className="mt-6 text-[14px] leading-relaxed text-white/80">請以已授權的管理員 Google 帳號登入。登入後 90 天內使用不需再登入。</p>
-            <Button variant="gold" className="mt-6 w-full" onClick={() => { sessionStorage.removeItem('sp-hub-auto-login'); void signIn(); }}>
-              以 Google 帳號登入
-            </Button>
-          </>
-        ) : (
-          <p className="mt-6 flex items-center gap-2 text-[14px] text-white/80">
-            <span className="inline-block size-4 animate-spin rounded-full border-2 border-white/30 border-t-gold" />
-            正在以 Google 帳號登入…
-          </p>
-        )}
-      </div>
+        <p className="mt-6 text-[14px] leading-relaxed text-white/80">第一次在這台裝置使用，請輸入<b className="text-white">存取碼</b>綁定裝置。綁定後，之後打開網址就直接進入，不需登入。</p>
+        <input
+          autoFocus
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          placeholder="例：ABCD-2345"
+          autoCapitalize="characters"
+          autoComplete="one-time-code"
+          aria-label="存取碼"
+          className="num mt-5 w-full rounded-[14px] border border-white/20 bg-white/10 px-4 py-3 text-center text-[22px] tracking-[0.3em] text-white outline-none placeholder:text-white/30 focus:border-gold"
+        />
+        <Button type="submit" variant="gold" className="mt-4 w-full" loading={busy}>綁定此裝置</Button>
+        {err && <p role="alert" className="mt-3 rounded-[12px] bg-white/10 px-3 py-2 text-[13px] text-[#f6c7bf]">{err}</p>}
+        <p className="mt-5 text-[12px] leading-relaxed text-white/50">存取碼可在 Apps Script 執行 showAccessCode 查看，或由已綁定裝置的「系統設定」查看。請勿外流。</p>
+      </form>
     </div>
   );
 }

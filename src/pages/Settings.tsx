@@ -123,6 +123,7 @@ export default function Settings() {
         <Button variant="primary" icon={<Save className="size-4" />} loading={saving} disabled={!dirty} onClick={save} className="shadow-lift">儲存設定</Button>
       </div>
 
+      {snap.mode === 'gas' && <AccessCodeCard />}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
           <CardHead eyebrow="Health" title={<span className="flex items-center gap-2"><Activity className="size-5 text-pine" />連線檢查</span>} />
@@ -215,5 +216,38 @@ function DemoCalendar() {
         {events.slice(-30).map((e) => <li key={e.eventId} className="num text-ink-3">{e.startIso.slice(0, 16).replace('T', ' ')} {e.title}</li>)}
       </ul>
     </details>
+  );
+}
+
+function AccessCodeCard() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = async (rotate = false) => {
+    setBusy(true);
+    try {
+      const r = await call('system.accessCode', { rotate });
+      setCode(r.code);
+      if (rotate) toast('success', '已更換存取碼，其他裝置需用新存取碼重新綁定');
+    } catch (e) {
+      toast('error', (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card className="mb-4">
+      <CardHead eyebrow="Device binding" title="裝置綁定存取碼" />
+      <p className="mb-3 text-[13px] text-ink-2">新手機或電腦第一次開啟 GitHub 網址時輸入這組存取碼，即可綁定該裝置；之後開網址直接進入。請只告訴需要使用的同仁。</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {code ? <code className="num rounded-[10px] bg-mist px-4 py-2 text-[20px] tracking-[0.25em]">{code}</code> : <Button size="sm" loading={busy} onClick={() => load(false)}>顯示存取碼</Button>}
+        {code && <Button size="sm" onClick={async () => toast((await copyText(code)) ? 'success' : 'error', '已複製存取碼')}>複製</Button>}
+        <Button size="sm" variant="ghost" className="text-danger" loading={busy && !!code} onClick={async () => {
+          const r = await confirm({ title: '更換存取碼？', tone: 'danger', confirmLabel: '更換', body: '所有已綁定的裝置（包含這一台）都會失效，需要用新的存取碼重新綁定。手機遺失或人員異動時使用。' });
+          if (r.ok) await load(true);
+        }}>更換存取碼（撤銷所有裝置）</Button>
+      </div>
+    </Card>
   );
 }

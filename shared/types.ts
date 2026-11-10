@@ -282,6 +282,7 @@ export interface ApiActions {
   'stats.annual': { req: { year: number }; res: unknown };
   'system.backup': { req: Record<string, never>; res: { name: string; url: string } };
   'system.health': { req: Record<string, never>; res: HealthReport };
+  'system.accessCode': { req: { rotate?: boolean }; res: { code: string } };
 }
 
 export type ActionName = keyof ApiActions;

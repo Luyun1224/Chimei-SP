@@ -18,7 +18,7 @@ Apps Script 的 `doGet` 只回傳一小段 HTML 去載入它們，因此 Apps Sc
 請從資料用的 Google 試算表開啟「擴充功能 → Apps Script」，再貼上 `Code.gs`。
 綁定後系統一律使用該試算表，執行 `setupSpreadsheet` 只會在這個試算表內建立／補齊工作表，不會另外產生新檔。
 
-## GitHub 網址（手機可用）
+## GitHub 網址（手機可用）：裝置綁定
 
-另外新增一個「網頁應用程式」部署：執行身分「我」、存取權「任何人」，並把網址存到 Script Properties 的 `API_URL`。
-詳細說明見 `docs/DEPLOY.md` 第 11 節。之後更新 Code.gs 時，兩個部署都要改成新版本。
+只需一個部署：執行身分「我」、存取權「任何人」。在編輯器執行 `showAccessCode` 取得存取碼，
+每台裝置第一次開 GitHub 網址時輸入一次即可。詳見 `docs/DEPLOY.md` 第 11 節。
