@@ -1235,9 +1235,18 @@ var SPHub = (() => {
   function currentEmail() {
     return (Session.getActiveUser().getEmail() || "").toLowerCase();
   }
+  function boundSpreadsheet() {
+    try {
+      return SpreadsheetApp.getActiveSpreadsheet() || null;
+    } catch {
+      return null;
+    }
+  }
   function openSpreadsheet() {
+    const bound = boundSpreadsheet();
+    if (bound) return bound;
     const id = props().getProperty("SPREADSHEET_ID");
-    if (!id) throw new Error("尚未設定 SPREADSHEET_ID，請先在 Apps Script 編輯器執行 setupSpreadsheet");
+    if (!id) throw new Error("找不到資料試算表：請從 Google 試算表的「擴充功能 → Apps Script」開啟本專案，或在 Script Properties 設定 SPREADSHEET_ID");
     return SpreadsheetApp.openById(id);
   }
   function buildEnv(ss) {
@@ -1373,12 +1382,10 @@ var SPHub = (() => {
   function setupSpreadsheet() {
     var _a;
     const p = props();
-    let id = p.getProperty("SPREADSHEET_ID");
-    const ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.create("SP Performance Hub 資料庫");
-    if (!id) {
-      id = ss.getId();
-      p.setProperty("SPREADSHEET_ID", id);
-    }
+    const bound = boundSpreadsheet();
+    const savedId = p.getProperty("SPREADSHEET_ID");
+    const ss = bound || (savedId ? SpreadsheetApp.openById(savedId) : SpreadsheetApp.create("SP Performance Hub 資料庫"));
+    if (p.getProperty("SPREADSHEET_ID") !== ss.getId()) p.setProperty("SPREADSHEET_ID", ss.getId());
     ss.setSpreadsheetTimeZone(TZ);
     const now = fmtGasDate(/* @__PURE__ */ new Date(), "datetime");
     const sheetFor = (name, legacy) => {
@@ -1437,7 +1444,7 @@ var SPHub = (() => {
       const me = currentEmail();
       if (me) p.setProperty("ADMIN_EMAILS", me);
     }
-    Logger.log("✅ 初始化完成（中文工作表）：%s", ss.getUrl());
+    Logger.log("✅ 初始化完成（%s）：%s", bound ? "使用綁定的試算表" : "使用 SPREADSHEET_ID 指定的試算表", ss.getUrl());
     Logger.log("管理員：%s", adminList().join(", ") || "（未設定，請於 Script Properties 設定 ADMIN_EMAILS）");
     return ss.getUrl();
   }

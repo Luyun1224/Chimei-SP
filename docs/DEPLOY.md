@@ -30,7 +30,10 @@
 
 ---
 
-## 1. 建立 Apps Script 專案
+## 1. 建立 Apps Script 專案（建議綁定試算表）
+
+> **建議做法**：先建立（或打開）要當資料庫的 Google 試算表 → 選單「**擴充功能 → Apps Script**」，用這個方式建立的專案會與試算表綁定，系統一律讀寫這個試算表，`setupSpreadsheet` 也不會另外建立新檔。
+
 
 1. 到 <https://script.google.com> → **新專案**，命名為 `SP Performance Hub`。
 2. 左側 **專案設定（⚙）**：

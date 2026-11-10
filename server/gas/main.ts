@@ -29,9 +29,21 @@ function adminList(): string[] {
 function currentEmail(): string {
   return (Session.getActiveUser().getEmail() || '').toLowerCase();
 }
+/** 綁定的試算表（從 Google 試算表「擴充功能 → Apps Script」建立的專案） */
+function boundSpreadsheet(): GoogleAppsScript.Spreadsheet.Spreadsheet | null {
+  try {
+    return SpreadsheetApp.getActiveSpreadsheet() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** 優先使用綁定的試算表；獨立專案才使用 Script Properties 的 SPREADSHEET_ID */
 function openSpreadsheet() {
+  const bound = boundSpreadsheet();
+  if (bound) return bound;
   const id = props().getProperty('SPREADSHEET_ID');
-  if (!id) throw new Error('尚未設定 SPREADSHEET_ID，請先在 Apps Script 編輯器執行 setupSpreadsheet');
+  if (!id) throw new Error('找不到資料試算表：請從 Google 試算表的「擴充功能 → Apps Script」開啟本專案，或在 Script Properties 設定 SPREADSHEET_ID');
   return SpreadsheetApp.openById(id);
 }
 
@@ -183,18 +195,17 @@ export function api(action: string, payloadJson: string): string {
 // ---------------- 初始化（在 Apps Script 編輯器手動執行） ----------------
 
 /**
- * 建立或補齊所有工作表、表頭、純文字格式與預設設定。可重複執行（不會覆蓋既有資料）。
- * 若 Script Properties 沒有 SPREADSHEET_ID，會自動建立新的試算表並寫入。
+ * 在「綁定的試算表」中建立或補齊所有工作表、表頭、純文字格式與預設設定。可重複執行（不會刪除既有資料）。
+ * - 從試算表「擴充功能 → Apps Script」建立的專案：一律使用該試算表，不會另外建立新檔。
+ * - 獨立專案：使用 Script Properties 的 SPREADSHEET_ID；兩者都沒有時才建立新試算表（只會建立一次）。
  * 若 ADMIN_EMAILS 為空，會將執行者設為第一位管理員。
  */
 export function setupSpreadsheet() {
   const p = props();
-  let id = p.getProperty('SPREADSHEET_ID');
-  const ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.create('SP Performance Hub 資料庫');
-  if (!id) {
-    id = ss.getId();
-    p.setProperty('SPREADSHEET_ID', id);
-  }
+  const bound = boundSpreadsheet();
+  const savedId = p.getProperty('SPREADSHEET_ID');
+  const ss = bound || (savedId ? SpreadsheetApp.openById(savedId) : SpreadsheetApp.create('SP Performance Hub 資料庫'));
+  if (p.getProperty('SPREADSHEET_ID') !== ss.getId()) p.setProperty('SPREADSHEET_ID', ss.getId());
   ss.setSpreadsheetTimeZone(TZ);
   const now = fmtGasDate(new Date(), 'datetime');
 
@@ -258,7 +269,7 @@ export function setupSpreadsheet() {
     const me = currentEmail();
     if (me) p.setProperty('ADMIN_EMAILS', me);
   }
-  Logger.log('✅ 初始化完成（中文工作表）：%s', ss.getUrl());
+  Logger.log('✅ 初始化完成（%s）：%s', bound ? '使用綁定的試算表' : '使用 SPREADSHEET_ID 指定的試算表', ss.getUrl());
   Logger.log('管理員：%s', adminList().join(', ') || '（未設定，請於 Script Properties 設定 ADMIN_EMAILS）');
   return ss.getUrl();
 }

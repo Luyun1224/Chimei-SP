@@ -153,4 +153,18 @@ describe('Apps Script Sheets 存取層（中文工作表）', () => {
     expect(after.ok && after.data.sps[0]).toMatchObject({ spId: 'SP-1', name: '王小明', status: 'paused' });
     expect(after.ok && after.data.settings.calendarId).toBe('old@group.calendar.google.com');
   });
+
+  it('綁定的試算表：setupSpreadsheet 直接使用它，不另外建立新檔', () => {
+    const props: Record<string, string> = { ADMIN_EMAILS: 'a@x.org', SPREADSHEET_ID: 'OTHER' };
+    let created = 0;
+    Object.assign(globalThis as Record<string, unknown>, {
+      SpreadsheetApp: { flush: () => {}, getActiveSpreadsheet: () => book, openById: () => { throw new Error('should not open by id'); }, create: () => { created++; return book; }, ProtectionType: { RANGE: 'RANGE' } },
+      PropertiesService: { getScriptProperties: () => ({ getProperty: (k: string) => props[k] ?? null, setProperty: (k: string, v: string) => (props[k] = v) }) },
+    });
+    setupSpreadsheet();
+    setupSpreadsheet();
+    expect(created).toBe(0);
+    expect(props.SPREADSHEET_ID).toBe('ID');
+    expect(book.getSheetByName('演出排程')).not.toBeNull();
+  });
 });
