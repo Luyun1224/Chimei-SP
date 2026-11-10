@@ -1,0 +1,1213 @@
+// 自動產生，請勿直接編輯（來源：server/）
+"use strict";
+var SPHub = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+
+  // server/gas/main.ts
+  var main_exports = {};
+  __export(main_exports, {
+    api: () => api,
+    doGet: () => doGet,
+    healthCheck: () => healthCheck,
+    setupSpreadsheet: () => setupSpreadsheet
+  });
+
+  // shared/time.ts
+  var TZ = "Asia/Taipei";
+  var TZ_OFFSET = "+08:00";
+  var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  var TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+  function isValidDate(s2) {
+    if (!DATE_RE.test(s2)) return false;
+    const [y, m, d] = s2.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+  }
+  var isValidTime = (s2) => TIME_RE.test(s2);
+  function toMinutes(t) {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  }
+  function diffMinutes(start, end) {
+    return toMinutes(end) - toMinutes(start);
+  }
+  function monthOf(date) {
+    return Number(date.slice(5, 7));
+  }
+  function yearOf(date) {
+    return Number(date.slice(0, 4));
+  }
+  function toZonedIso(date, time) {
+    return `${date}T${time}:00${TZ_OFFSET}`;
+  }
+
+  // shared/validate.ts
+  var AppError = class extends Error {
+    constructor(code, message, details) {
+      super(message);
+      __publicField(this, "code", code);
+      __publicField(this, "details", details);
+    }
+  };
+  var MAX = { name: 40, text: 120, note: 1e3 };
+  function clean(v, max = MAX.text) {
+    if (v === null || v === void 0) return "";
+    return String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim().slice(0, max);
+  }
+  function fail(errors) {
+    if (Object.keys(errors).length) {
+      throw new AppError("VALIDATION", Object.values(errors)[0], { fields: errors });
+    }
+  }
+  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  var PHONE_RE = /^[0-9+\-()#\s]{6,20}$/;
+  var SP_STATUS = ["active", "paused", "inactive"];
+  function validateSpInput(raw) {
+    const v = {
+      name: clean(raw.name, MAX.name),
+      phone: clean(raw.phone, 20),
+      email: clean(raw.email, 120).toLowerCase(),
+      lineNote: clean(raw.lineNote, MAX.text),
+      status: raw.status || "active",
+      joinDate: clean(raw.joinDate, 10),
+      certification: clean(raw.certification, MAX.text),
+      note: clean(raw.note, MAX.note)
+    };
+    const e = {};
+    if (!v.name) e.name = "請輸入 SP 姓名";
+    if (v.phone && !PHONE_RE.test(v.phone)) e.phone = "電話格式不正確";
+    if (v.email && !EMAIL_RE.test(v.email)) e.email = "電子郵件格式不正確";
+    if (!SP_STATUS.includes(v.status)) e.status = "身分狀態不正確";
+    if (v.joinDate && !isValidDate(v.joinDate)) e.joinDate = "加入日期格式不正確";
+    fail(e);
+    return v;
+  }
+  function validateSessionInput(raw) {
+    const v = {
+      date: clean(raw.date, 10),
+      unit: clean(raw.unit, MAX.text),
+      topic: clean(raw.topic, MAX.text),
+      checkinTime: clean(raw.checkinTime, 5),
+      startTime: clean(raw.startTime, 5),
+      endTime: clean(raw.endTime, 5),
+      location: clean(raw.location, MAX.text),
+      note: clean(raw.note, MAX.note),
+      spIds: Array.isArray(raw.spIds) ? [...new Set(raw.spIds.map((s2) => clean(s2, 40)).filter(Boolean))] : []
+    };
+    const e = {};
+    if (!isValidDate(v.date)) e.date = "請選擇正確的演出日期";
+    if (!v.unit) e.unit = "請輸入申請單位";
+    if (!v.topic) e.topic = "請輸入教案主題";
+    if (!v.location) e.location = "請輸入演出地點";
+    if (!isValidTime(v.checkinTime)) e.checkinTime = "請輸入報到時間";
+    if (!isValidTime(v.startTime)) e.startTime = "請輸入演出開始時間";
+    if (!isValidTime(v.endTime)) e.endTime = "請輸入演出結束時間";
+    if (!e.startTime && !e.endTime && diffMinutes(v.startTime, v.endTime) <= 0) e.endTime = "演出結束時間必須晚於開始時間";
+    if (!e.checkinTime && !e.startTime && diffMinutes(v.checkinTime, v.startTime) < 0)
+      e.checkinTime = "報到時間不可晚於演出開始時間";
+    if (!v.spIds.length) e.spIds = "請至少選擇一位 SP";
+    if (v.spIds.length > 50) e.spIds = "單場 SP 人數過多";
+    fail(e);
+    return v;
+  }
+  function validateVerifyInput(raw) {
+    const attendance = raw.attendance;
+    const e = {};
+    if (!["present", "absent", "cancelled", "pending"].includes(attendance)) e.attendance = "出席狀態不正確";
+    if (attendance === "pending") e.attendance = "請選擇出席狀態後再核定";
+    const actualStart = clean(raw.actualStart, 5);
+    const actualEnd = clean(raw.actualEnd, 5);
+    let minutes = 0;
+    if (attendance === "present") {
+      if (!isValidTime(actualStart)) e.actualStart = "請輸入實際開始時間";
+      if (!isValidTime(actualEnd)) e.actualEnd = "請輸入實際結束時間";
+      if (!e.actualStart && !e.actualEnd && diffMinutes(actualStart, actualEnd) <= 0) e.actualEnd = "實際結束必須晚於開始";
+      const m = raw.approvedMinutes;
+      if (m === null || m === void 0 || !Number.isInteger(m) || m < 0 || m > 24 * 60)
+        e.approvedMinutes = "核定分鐘數需為 0–1440 的整數";
+      else minutes = m;
+      if (!e.approvedMinutes && !e.actualEnd && !e.actualStart && minutes > diffMinutes(actualStart, actualEnd))
+        e.approvedMinutes = "核定分鐘數不可超過實際演出時間";
+    }
+    fail(e);
+    return {
+      ...raw,
+      actualStart: attendance === "present" ? actualStart : "",
+      actualEnd: attendance === "present" ? actualEnd : "",
+      approvedMinutes: attendance === "present" ? minutes : 0,
+      minutesNote: clean(raw.minutesNote, MAX.note),
+      reason: clean(raw.reason, MAX.note)
+    };
+  }
+  function sheetSafe(s2) {
+    return /^[=+@]/.test(s2) ? `'${s2}` : s2;
+  }
+
+  // shared/template.ts
+  var DEFAULT_INDIVIDUAL_TEMPLATE = `{SP姓名} 您好，提醒您{相對日}有標準化病人（SP）演出安排：
+
+📅 演出日期：{日期}
+📍 演出地點：{地點}
+🕘 報到時間：{報到時間}
+⏰ 演出時間：{開始時間}–{結束時間}
+📋 教案主題：{教案名稱}
+
+再請您依報到時間準時抵達，謝謝您的協助！`;
+  var DEFAULT_SUMMARY_TEMPLATE = `【SP 演出總整理】{日期}
+共 {場次數} 場、SP {人次} 人次
+
+{場次清單}
+
+如有異動將另行通知，謝謝各位的協助！`;
+  var DEFAULT_SETTINGS = {
+    calendarId: "",
+    adminReminderEnabled: true,
+    adminReminderMinutes: 1440,
+    individualTemplate: DEFAULT_INDIVIDUAL_TEMPLATE,
+    summaryTemplate: DEFAULT_SUMMARY_TEMPLATE,
+    units: [],
+    topics: [],
+    locations: [],
+    inactiveThresholdDays: 90
+  };
+  function sessionFingerprint(s2, a) {
+    const src = [s2.date, s2.checkinTime, s2.startTime, s2.endTime, s2.location, s2.topic, s2.status, s2.isDeleted ? "D" : "", (a == null ? void 0 : a.attendance) === "cancelled" || (a == null ? void 0 : a.isDeleted) ? "X" : ""].join("|");
+    let h = 5381;
+    for (let i = 0; i < src.length; i++) h = (h << 5) + h + src.charCodeAt(i) >>> 0;
+    return h.toString(16);
+  }
+
+  // shared/stats.ts
+  function isCountable(a, s2) {
+    return !!s2 && !a.isDeleted && !s2.isDeleted && s2.status === "completed" && a.verifyStatus === "verified" && a.attendance === "present" && typeof a.approvedMinutes === "number";
+  }
+  function needsVerification(a, s2) {
+    return !!s2 && !s2.isDeleted && !a.isDeleted && s2.status === "completed" && a.verifyStatus !== "verified";
+  }
+  function inc(m, key, label, sessionId, minutes, seen) {
+    const r = m.get(key) || { key, label, sessions: 0, personTimes: 0, minutes: 0 };
+    r.personTimes += 1;
+    r.minutes += minutes;
+    const set = seen.get(key) || /* @__PURE__ */ new Set();
+    if (!set.has(sessionId)) {
+      set.add(sessionId);
+      r.sessions += 1;
+    }
+    seen.set(key, set);
+    m.set(key, r);
+  }
+  var byMinutes = (a, b) => b.minutes - a.minutes || b.personTimes - a.personTimes || a.label.localeCompare(b.label, "zh-Hant");
+  function computeStats(data, f, today) {
+    var _a;
+    const sessionMap = new Map(data.sessions.map((s2) => [s2.sessionId, s2]));
+    const spMap = new Map(data.sps.map((p) => [p.spId, p]));
+    const sessionInScope = (s2) => !s2.isDeleted && yearOf(s2.date) === f.year && (!f.month || monthOf(s2.date) === f.month) && (!f.unit || s2.unit === f.unit) && (!f.topic || s2.topic === f.topic);
+    const monthly = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, sessions: 0, personTimes: 0, minutes: 0 }));
+    const monthSeen = Array.from({ length: 12 }, () => /* @__PURE__ */ new Set());
+    const bySp = /* @__PURE__ */ new Map(), byUnit = /* @__PURE__ */ new Map(), byTopic = /* @__PURE__ */ new Map();
+    const seenSp = /* @__PURE__ */ new Map(), seenUnit = /* @__PURE__ */ new Map(), seenTopic = /* @__PURE__ */ new Map();
+    const sessionSet = /* @__PURE__ */ new Set();
+    let personTimes = 0, minutes = 0, unverified = 0;
+    for (const a of data.assignments) {
+      const s2 = sessionMap.get(a.sessionId);
+      if (!s2 || !sessionInScope(s2)) continue;
+      if (f.spId && a.spId !== f.spId) continue;
+      if (needsVerification(a, s2)) unverified++;
+      if (!isCountable(a, s2)) continue;
+      const m = a.approvedMinutes;
+      personTimes++;
+      minutes += m;
+      sessionSet.add(s2.sessionId);
+      const mi = monthOf(s2.date) - 1;
+      monthly[mi].personTimes++;
+      monthly[mi].minutes += m;
+      if (!monthSeen[mi].has(s2.sessionId)) {
+        monthSeen[mi].add(s2.sessionId);
+        monthly[mi].sessions++;
+      }
+      inc(bySp, a.spId, ((_a = spMap.get(a.spId)) == null ? void 0 : _a.name) || a.spNameSnapshot, s2.sessionId, m, seenSp);
+      inc(byUnit, s2.unit, s2.unit, s2.sessionId, m, seenUnit);
+      inc(byTopic, s2.topic, s2.topic, s2.sessionId, m, seenTopic);
+    }
+    const statusCounts = { scheduled: 0, completed: 0, cancelled: 0 };
+    let awaitingCompletion = 0;
+    for (const s2 of data.sessions) {
+      if (!sessionInScope(s2)) continue;
+      if (f.spId && !data.assignments.some((a) => a.sessionId === s2.sessionId && a.spId === f.spId && !a.isDeleted)) continue;
+      statusCounts[s2.status]++;
+      if (s2.status === "scheduled" && s2.date < today) awaitingCompletion++;
+    }
+    const spRows = [...bySp.values()].sort(byMinutes);
+    const activeSps = spRows.length;
+    const topCount = Math.max(1, Math.ceil(activeSps * 0.2));
+    const topMinutes = spRows.slice(0, topCount).reduce((n, r) => n + r.minutes, 0);
+    const bucketDefs = [
+      ["< 5 小時", 0, 300],
+      ["5–10 小時", 300, 600],
+      ["10–20 小時", 600, 1200],
+      ["20–40 小時", 1200, 2400],
+      ["≥ 40 小時", 2400, Infinity]
+    ];
+    return {
+      sessions: sessionSet.size,
+      personTimes,
+      minutes,
+      activeSps,
+      avgMinutesPerSp: activeSps ? Math.round(minutes / activeSps) : 0,
+      monthly,
+      bySp: spRows,
+      byUnit: [...byUnit.values()].sort(byMinutes),
+      byTopic: [...byTopic.values()].sort(byMinutes),
+      pending: { unverifiedAssignments: unverified, awaitingCompletion },
+      concentration: {
+        top20Share: minutes ? topMinutes / minutes : 0,
+        topCount: activeSps ? topCount : 0,
+        buckets: bucketDefs.map(([label, lo, hi]) => ({
+          label,
+          count: spRows.filter((r) => r.minutes >= lo && r.minutes < hi).length
+        }))
+      },
+      statusCounts
+    };
+  }
+
+  // server/service.ts
+  var AUDIT_MAX = 45e3;
+  function createService({ repo, env, calendar }) {
+    const id = (prefix) => `${prefix}-${env.today().replace(/-/g, "")}-${env.randomId()}`;
+    function find(t, key) {
+      const idKey = { sps: "spId", sessions: "sessionId", assignments: "assignmentId", notifications: "notificationId", audit: "auditId" }[t];
+      const row = repo.all(t).find((r) => r[idKey] === key);
+      if (!row) throw new AppError("NOT_FOUND", "找不到資料，可能已被他人刪除，請重新整理");
+      return row;
+    }
+    function audit(entity, entityId, action, before, after, note = "") {
+      const j = (v) => v === void 0 || v === null ? "" : JSON.stringify(v).slice(0, AUDIT_MAX);
+      repo.insert("audit", [{ auditId: id("L"), at: env.nowIso(), actor: env.user(), entity, entityId, action, before: j(before), after: j(after), note: clean(note, 1e3) }]);
+    }
+    function checkVersion(current, expected) {
+      if (expected !== void 0 && current.version !== expected)
+        throw new AppError("VERSION_CONFLICT", "這筆資料剛剛已被其他人修改，請重新載入後再操作", { current });
+    }
+    function getSettings() {
+      const raw = repo.getSettings();
+      const out = { ...DEFAULT_SETTINGS };
+      for (const [k, def] of Object.entries(DEFAULT_SETTINGS)) {
+        if (!(k in raw) || raw[k] === "") continue;
+        try {
+          out[k] = typeof def === "string" ? raw[k] : JSON.parse(raw[k]);
+        } catch {
+          out[k] = def;
+        }
+      }
+      return out;
+    }
+    function rememberOptions(input) {
+      const st = getSettings();
+      const patch = {};
+      const add = (key, v) => {
+        if (v && !st[key].includes(v)) patch[key] = JSON.stringify([...st[key], v].slice(-300));
+      };
+      add("units", input.unit);
+      add("topics", input.topic);
+      add("locations", input.location);
+      if (Object.keys(patch).length) repo.setSettings(patch);
+    }
+    const liveAssignmentsOf = (sessionId) => repo.all("assignments").filter((a) => a.sessionId === sessionId && !a.isDeleted);
+    function detectWarnings(input, selfId) {
+      var _a;
+      const warnings = [];
+      const sps = new Map(repo.all("sps").map((p) => [p.spId, p]));
+      const others = repo.all("sessions").filter((s2) => s2.sessionId !== selfId && !s2.isDeleted && s2.status !== "cancelled" && s2.date === input.date);
+      const s1 = toMinutes(input.checkinTime), e1 = toMinutes(input.endTime);
+      for (const o of others) {
+        const overlap = s1 < toMinutes(o.endTime) && toMinutes(o.checkinTime) < e1;
+        if (o.unit === input.unit && o.topic === input.topic && o.startTime === input.startTime)
+          warnings.push({ type: "duplicate", otherSessionId: o.sessionId, message: `已有相同日期、單位、教案與開始時間的排程（${o.startTime}–${o.endTime}），可能重複登錄` });
+        if (!overlap) continue;
+        const busy = liveAssignmentsOf(o.sessionId).filter((a) => a.attendance !== "cancelled" && input.spIds.includes(a.spId));
+        for (const a of busy)
+          warnings.push({
+            type: "conflict",
+            spId: a.spId,
+            otherSessionId: o.sessionId,
+            message: `${((_a = sps.get(a.spId)) == null ? void 0 : _a.name) || a.spNameSnapshot} 在 ${o.checkinTime}–${o.endTime} 已排定「${o.topic}」（${o.unit}）`
+          });
+      }
+      for (const spId of input.spIds) {
+        const p = sps.get(spId);
+        if (!p) throw new AppError("VALIDATION", "選擇的 SP 不存在，請重新整理");
+        if (p.status !== "active") warnings.push({ type: "sp_inactive", spId, message: `${p.name} 目前狀態為「${p.status === "paused" ? "暫停" : "停用"}」` });
+      }
+      return warnings;
+    }
+    function buildEvent(s2) {
+      const names = liveAssignmentsOf(s2.sessionId).filter((a) => a.attendance !== "cancelled").map((a) => a.spNameSnapshot);
+      const st = getSettings();
+      return {
+        sessionId: s2.sessionId,
+        title: `【SP演出】${s2.topic}｜${s2.unit}`,
+        location: s2.location,
+        startIso: toZonedIso(s2.date, s2.startTime),
+        endIso: toZonedIso(s2.date, s2.endTime),
+        date: s2.date,
+        reminderMinutes: st.adminReminderEnabled ? st.adminReminderMinutes : null,
+        description: [
+          `SP：${names.join("、") || "（未指派）"}`,
+          `報到時間：${s2.checkinTime}`,
+          `演出時間：${s2.startTime}–${s2.endTime}`,
+          `教案主題：${s2.topic}`,
+          `申請單位：${s2.unit}`,
+          `演出地點：${s2.location}`,
+          s2.note ? `備註：${s2.note}` : "",
+          "",
+          `系統排程 ID：${s2.sessionId}`,
+          "（本事件由 SP Performance Hub 管理，請勿直接修改；此提醒僅供管理員，不代替 LINE 人工通知）"
+        ].filter((x) => x !== "").join("\n")
+      };
+    }
+    function syncCalendar(sessionId) {
+      const s2 = find("sessions", sessionId);
+      const st = getSettings();
+      let patch;
+      if (!st.calendarId) {
+        patch = { syncStatus: "disabled", syncError: "尚未設定 Calendar ID" };
+      } else {
+        try {
+          if (s2.isDeleted || s2.status === "cancelled") {
+            calendar.remove(st.calendarId, s2.calendarEventId, s2.sessionId, s2.date);
+            patch = { calendarEventId: "", syncStatus: "removed", syncError: "", syncedAt: env.nowIso() };
+          } else {
+            const eventId = calendar.upsert(st.calendarId, s2.calendarEventId, buildEvent(s2));
+            patch = { calendarEventId: eventId, syncStatus: "synced", syncError: "", syncedAt: env.nowIso() };
+          }
+        } catch (e) {
+          patch = { syncStatus: "failed", syncError: clean(e.message || String(e), 500) };
+        }
+      }
+      return env.withLock(() => {
+        repo.refresh();
+        const latest = find("sessions", sessionId);
+        const next = { ...latest, ...patch };
+        repo.update("sessions", next);
+        if (patch.syncStatus === "failed") audit("session", sessionId, "calendar_sync_failed", null, null, patch.syncError);
+        return next;
+      });
+    }
+    const handlers = {
+      bootstrap: () => ({
+        mode: "gas",
+        user: { email: env.user(), isAdmin: true },
+        today: env.today(),
+        serverTime: env.nowIso(),
+        sps: repo.all("sps"),
+        sessions: repo.all("sessions").filter((s2) => !s2.isDeleted),
+        assignments: repo.all("assignments"),
+        notifications: repo.all("notifications"),
+        settings: getSettings()
+      }),
+      "sp.save": ({ spId, input, expectedVersion }) => {
+        const v = validateSpInput(input);
+        return env.withLock(() => {
+          repo.refresh();
+          const now = env.nowIso(), actor = env.user();
+          const dup = repo.all("sps").find((p) => p.name === v.name && p.spId !== spId && p.status !== "inactive");
+          if (dup && !spId) throw new AppError("VALIDATION", `已有同名 SP「${v.name}」，若為不同人請在姓名加註區別`);
+          if (!spId) {
+            const sp = { spId: id("SP"), ...v, createdAt: now, createdBy: actor, updatedAt: now, updatedBy: actor, version: 1 };
+            repo.insert("sps", [sp]);
+            audit("sp", sp.spId, "create", null, sp);
+            return { sps: [sp] };
+          }
+          const cur = find("sps", spId);
+          checkVersion(cur, expectedVersion);
+          const next = { ...cur, ...v, updatedAt: now, updatedBy: actor, version: cur.version + 1 };
+          repo.update("sps", next);
+          audit("sp", spId, cur.status !== next.status ? `status:${next.status}` : "update", cur, next);
+          return { sps: [next] };
+        });
+      },
+      "session.save": ({ sessionId, input, expectedVersion, requestId, confirm }) => {
+        const v = validateSessionInput(input);
+        const reqId = clean(requestId, 80);
+        const written = env.withLock(() => {
+          repo.refresh();
+          if (!sessionId && reqId) {
+            const prev = repo.all("sessions").find((s2) => s2.requestId === reqId);
+            if (prev) return { session: prev, replay: true };
+          }
+          const warnings = detectWarnings(v, sessionId);
+          if (warnings.length && !confirm) throw new AppError("NEEDS_CONFIRMATION", "偵測到可能的衝突或重複，請確認", { warnings });
+          const now = env.nowIso(), actor = env.user();
+          const spMap = new Map(repo.all("sps").map((p) => [p.spId, p]));
+          const newAssignment = (sid, spId) => ({
+            assignmentId: id("A"),
+            sessionId: sid,
+            spId,
+            spNameSnapshot: spMap.get(spId).name,
+            attendance: "pending",
+            actualStart: "",
+            actualEnd: "",
+            approvedMinutes: null,
+            minutesNote: "",
+            verifyStatus: "unverified",
+            verifiedBy: "",
+            verifiedAt: "",
+            isDeleted: false,
+            createdAt: now,
+            updatedAt: now,
+            updatedBy: actor,
+            version: 1
+          });
+          const fields = { date: v.date, unit: v.unit, topic: v.topic, checkinTime: v.checkinTime, startTime: v.startTime, endTime: v.endTime, location: v.location, note: v.note };
+          if (!sessionId) {
+            const s2 = {
+              sessionId: id("S"),
+              ...fields,
+              status: "scheduled",
+              cancelReason: "",
+              calendarEventId: "",
+              syncStatus: "pending",
+              syncError: "",
+              syncedAt: "",
+              isDeleted: false,
+              deleteReason: "",
+              requestId: reqId,
+              createdAt: now,
+              createdBy: actor,
+              updatedAt: now,
+              updatedBy: actor,
+              version: 1
+            };
+            const as = v.spIds.map((spId) => newAssignment(s2.sessionId, spId));
+            repo.insert("sessions", [s2]);
+            repo.insert("assignments", as);
+            audit("session", s2.sessionId, "create", null, { ...s2, spIds: v.spIds }, warnings.map((w) => w.message).join("；"));
+            rememberOptions(v);
+            return { session: s2, warnings };
+          }
+          const cur = find("sessions", sessionId);
+          if (cur.isDeleted) throw new AppError("STATE", "此排程已刪除");
+          if (cur.status === "cancelled") throw new AppError("STATE", "已取消的排程不可修改");
+          checkVersion(cur, expectedVersion);
+          const existing = liveAssignmentsOf(sessionId);
+          const removed = existing.filter((a) => !v.spIds.includes(a.spId));
+          const locked = removed.filter((a) => a.verifyStatus === "verified");
+          if (locked.length) throw new AppError("STATE", `${locked.map((a) => a.spNameSnapshot).join("、")} 已完成時數核定，請先在「演出核定」取消核定後再移除`);
+          for (const a of removed) repo.update("assignments", { ...a, isDeleted: true, updatedAt: now, updatedBy: actor, version: a.version + 1 });
+          const added = v.spIds.filter((spId) => !existing.some((a) => a.spId === spId)).map((spId) => newAssignment(sessionId, spId));
+          if (added.length) repo.insert("assignments", added);
+          const next = { ...cur, ...fields, syncStatus: "pending", updatedAt: now, updatedBy: actor, version: cur.version + 1 };
+          repo.update("sessions", next);
+          audit("session", sessionId, "update", { ...cur, spIds: existing.map((a) => a.spId) }, { ...next, spIds: v.spIds }, warnings.map((w) => w.message).join("；"));
+          rememberOptions(v);
+          return { session: next, warnings };
+        });
+        const synced = written.session.syncStatus === "synced" ? written.session : syncCalendar(written.session.sessionId);
+        return {
+          sessions: [synced],
+          assignments: repo.all("assignments").filter((a) => a.sessionId === synced.sessionId),
+          warnings: "warnings" in written ? written.warnings : [],
+          settings: getSettings()
+        };
+      },
+      "session.cancel": ({ sessionId, reason, expectedVersion }) => {
+        const why = clean(reason, 500);
+        if (!why) throw new AppError("VALIDATION", "請填寫取消原因");
+        env.withLock(() => {
+          repo.refresh();
+          const cur = find("sessions", sessionId);
+          checkVersion(cur, expectedVersion);
+          if (cur.status === "cancelled") return;
+          const now = env.nowIso(), actor = env.user();
+          const locked = liveAssignmentsOf(sessionId).filter((a) => a.verifyStatus === "verified");
+          if (locked.length) throw new AppError("STATE", "此排程已有核定時數，請先取消核定再取消排程");
+          const next = { ...cur, status: "cancelled", cancelReason: why, syncStatus: "pending", updatedAt: now, updatedBy: actor, version: cur.version + 1 };
+          repo.update("sessions", next);
+          for (const a of liveAssignmentsOf(sessionId))
+            repo.update("assignments", { ...a, attendance: "cancelled", approvedMinutes: 0, updatedAt: now, updatedBy: actor, version: a.version + 1 });
+          audit("session", sessionId, "cancel", cur, next, why);
+        });
+        const s2 = syncCalendar(sessionId);
+        return { sessions: [s2], assignments: repo.all("assignments").filter((a) => a.sessionId === sessionId) };
+      },
+      "session.delete": ({ sessionId, reason, expectedVersion }) => {
+        const why = clean(reason, 500);
+        if (!why) throw new AppError("VALIDATION", "請填寫刪除原因（例如：誤建、重複登錄）");
+        env.withLock(() => {
+          repo.refresh();
+          const cur = find("sessions", sessionId);
+          checkVersion(cur, expectedVersion);
+          if (liveAssignmentsOf(sessionId).some((a) => a.verifyStatus === "verified"))
+            throw new AppError("STATE", "此排程已有核定時數，不可刪除；如需更正請先取消核定");
+          const now = env.nowIso(), actor = env.user();
+          const next = { ...cur, isDeleted: true, deleteReason: why, syncStatus: "pending", updatedAt: now, updatedBy: actor, version: cur.version + 1 };
+          repo.update("sessions", next);
+          audit("session", sessionId, "soft_delete", cur, next, why);
+        });
+        const s2 = syncCalendar(sessionId);
+        return { sessions: [s2] };
+      },
+      "session.complete": ({ sessionId, expectedVersion }) => env.withLock(() => {
+        repo.refresh();
+        const cur = find("sessions", sessionId);
+        checkVersion(cur, expectedVersion);
+        if (cur.isDeleted || cur.status === "cancelled") throw new AppError("STATE", "已取消或刪除的排程無法標記完成");
+        if (cur.date > env.today()) throw new AppError("STATE", "演出日期尚未到，無法標記為已完成");
+        if (cur.status === "completed") return { sessions: [cur] };
+        const now = env.nowIso();
+        const next = { ...cur, status: "completed", updatedAt: now, updatedBy: env.user(), version: cur.version + 1 };
+        repo.update("sessions", next);
+        audit("session", sessionId, "complete", cur, next);
+        return { sessions: [next] };
+      }),
+      "session.resync": ({ sessionId }) => ({ sessions: [syncCalendar(sessionId)] }),
+      "session.verifyAllAsScheduled": ({ sessionId }) => env.withLock(() => {
+        repo.refresh();
+        const cur = find("sessions", sessionId);
+        if (cur.isDeleted || cur.status === "cancelled") throw new AppError("STATE", "已取消或刪除的排程無法核定");
+        if (cur.date > env.today()) throw new AppError("STATE", "演出日期尚未到，無法核定");
+        const now = env.nowIso(), actor = env.user();
+        let s2 = cur;
+        if (cur.status !== "completed") {
+          s2 = { ...cur, status: "completed", updatedAt: now, updatedBy: actor, version: cur.version + 1 };
+          repo.update("sessions", s2);
+          audit("session", sessionId, "complete", cur, s2);
+        }
+        const minutes = diffMinutes(cur.startTime, cur.endTime);
+        const changed = [];
+        for (const a of liveAssignmentsOf(sessionId)) {
+          if (a.verifyStatus === "verified" || a.attendance === "cancelled") continue;
+          const next = {
+            ...a,
+            attendance: "present",
+            actualStart: cur.startTime,
+            actualEnd: cur.endTime,
+            approvedMinutes: minutes,
+            verifyStatus: "verified",
+            verifiedBy: actor,
+            verifiedAt: now,
+            updatedAt: now,
+            updatedBy: actor,
+            version: a.version + 1
+          };
+          repo.update("assignments", next);
+          audit("assignment", a.assignmentId, "verify", a, next, "依預定時間批次核定");
+          changed.push(next);
+        }
+        return { sessions: [s2], assignments: changed };
+      }),
+      "assignment.verify": (raw) => {
+        const v = validateVerifyInput(raw);
+        return env.withLock(() => {
+          repo.refresh();
+          const cur = find("assignments", v.assignmentId);
+          checkVersion(cur, v.expectedVersion);
+          if (cur.isDeleted) throw new AppError("STATE", "此明細已移除");
+          const s2 = find("sessions", cur.sessionId);
+          if (s2.isDeleted || s2.status === "cancelled") throw new AppError("STATE", "排程已取消或刪除，無法核定");
+          if (s2.status !== "completed") throw new AppError("STATE", "請先將排程標記為「已完成」再核定時數");
+          if (cur.verifyStatus === "verified" && !v.reason) throw new AppError("VALIDATION", "更正已核定紀錄需填寫更正原因");
+          const now = env.nowIso(), actor = env.user();
+          const next = {
+            ...cur,
+            attendance: v.attendance,
+            actualStart: v.actualStart || "",
+            actualEnd: v.actualEnd || "",
+            approvedMinutes: v.approvedMinutes,
+            minutesNote: v.minutesNote || "",
+            verifyStatus: "verified",
+            verifiedBy: actor,
+            verifiedAt: now,
+            updatedAt: now,
+            updatedBy: actor,
+            version: cur.version + 1
+          };
+          repo.update("assignments", next);
+          audit("assignment", cur.assignmentId, cur.verifyStatus === "verified" ? "correct" : "verify", cur, next, v.reason || "");
+          return { assignments: [next] };
+        });
+      },
+      "assignment.unverify": ({ assignmentId, reason, expectedVersion }) => {
+        const why = clean(reason, 500);
+        if (!why) throw new AppError("VALIDATION", "請填寫取消核定原因");
+        return env.withLock(() => {
+          repo.refresh();
+          const cur = find("assignments", assignmentId);
+          checkVersion(cur, expectedVersion);
+          if (cur.verifyStatus !== "verified") return { assignments: [cur] };
+          const now = env.nowIso(), actor = env.user();
+          const next = { ...cur, verifyStatus: "unverified", verifiedBy: "", verifiedAt: "", updatedAt: now, updatedBy: actor, version: cur.version + 1 };
+          repo.update("assignments", next);
+          audit("assignment", assignmentId, "unverify", cur, next, why);
+          return { assignments: [next] };
+        });
+      },
+      "notify.mark": ({ assignmentIds, status, note }) => {
+        if (!Array.isArray(assignmentIds) || !assignmentIds.length) throw new AppError("VALIDATION", "請選擇要標記的 SP");
+        if (status !== "notified" && status !== "not_notified") throw new AppError("VALIDATION", "通知狀態不正確");
+        return env.withLock(() => {
+          repo.refresh();
+          const now = env.nowIso(), actor = env.user();
+          const rows = assignmentIds.slice(0, 200).map((aid) => {
+            const a = find("assignments", aid);
+            const s2 = find("sessions", a.sessionId);
+            return {
+              notificationId: id("N"),
+              sessionId: s2.sessionId,
+              assignmentId: aid,
+              spId: a.spId,
+              status,
+              markedBy: actor,
+              markedAt: now,
+              fingerprint: sessionFingerprint(s2, a),
+              note: clean(note, 500)
+            };
+          });
+          repo.insert("notifications", rows);
+          audit("notification", rows.map((r) => r.assignmentId).join(","), `mark:${status}`, null, null, `人工標記 ${rows.length} 筆（僅代表管理員確認，非送達/已讀）`);
+          return { notifications: rows };
+        });
+      },
+      "settings.save": ({ patch }) => env.withLock(() => {
+        repo.refresh();
+        const before = getSettings();
+        const kv = {};
+        for (const [k, def] of Object.entries(DEFAULT_SETTINGS)) {
+          if (!patch || !(k in patch)) continue;
+          const val = patch[k];
+          if (typeof def === "string") kv[k] = clean(val, k.endsWith("Template") ? 4e3 : 300);
+          else if (typeof def === "number") {
+            const n = Number(val);
+            if (!Number.isInteger(n) || n < 0 || n > 40320) throw new AppError("VALIDATION", "數值設定不正確");
+            kv[k] = JSON.stringify(n);
+          } else if (typeof def === "boolean") kv[k] = JSON.stringify(!!val);
+          else if (Array.isArray(def)) {
+            if (!Array.isArray(val)) throw new AppError("VALIDATION", "選項清單格式不正確");
+            kv[k] = JSON.stringify([...new Set(val.map((x) => clean(x, 120)).filter(Boolean))].slice(0, 300));
+          }
+        }
+        repo.setSettings(kv);
+        const after = getSettings();
+        audit("settings", "System_Settings", "update", before, after);
+        return { settings: after };
+      }),
+      "audit.list": ({ entityId, limit }) => {
+        const all = repo.all("audit");
+        const list = entityId ? all.filter((a) => a.entityId === entityId || a.entityId.split(",").includes(entityId)) : all;
+        return list.slice(-Math.min(limit || 200, 1e3)).reverse();
+      },
+      "stats.annual": ({ year }) => {
+        if (!Number.isInteger(year) || year < 2e3 || year > 2100) throw new AppError("VALIDATION", "年度不正確");
+        return computeStats({ sessions: repo.all("sessions"), assignments: repo.all("assignments"), sps: repo.all("sps") }, { year }, env.today());
+      },
+      "system.backup": () => {
+        if (!env.backup) throw new AppError("NOT_CONFIGURED", "此環境不支援雲端備份，請使用匯出 JSON");
+        const r = env.backup();
+        audit("system", "backup", "backup", null, r);
+        return r;
+      },
+      "system.health": () => {
+        if (!env.health) throw new AppError("NOT_CONFIGURED", "此環境不支援健康檢查");
+        return env.health();
+      }
+    };
+    function dispatch(action, payload) {
+      try {
+        const email = env.user();
+        if (!email) throw new AppError("UNAUTHENTICATED", "無法取得登入身分，請以 Google 帳號登入");
+        if (!env.isAdmin(email)) throw new AppError("FORBIDDEN", `帳號 ${email} 未獲授權使用本系統，請聯絡臨床技能中心管理員`);
+        const h = handlers[action];
+        if (!h) throw new AppError("VALIDATION", `未知的操作：${String(action)}`);
+        return { ok: true, data: h(payload || {}) };
+      } catch (e) {
+        if (e instanceof AppError) return { ok: false, error: { code: e.code, message: e.message, details: e.details } };
+        const msg = (e == null ? void 0 : e.message) || String(e);
+        if (/lock|鎖/i.test(msg)) return { ok: false, error: { code: "LOCK_TIMEOUT", message: "系統忙碌中，請稍後再試" } };
+        try {
+          audit("system", String(action), "error", null, null, msg);
+        } catch {
+        }
+        return { ok: false, error: { code: "INTERNAL", message: "系統發生錯誤：" + msg } };
+      }
+    }
+    return { dispatch, handlers, getSettings };
+  }
+
+  // server/schema.ts
+  var s = (key, label) => ({ key, type: "string", label });
+  var TABLES = {
+    sps: {
+      sheet: "SP_Master",
+      idKey: "spId",
+      columns: [
+        s("spId", "SP_ID"),
+        s("name", "姓名"),
+        s("phone", "聯絡電話"),
+        s("email", "電子郵件"),
+        s("lineNote", "LINE 顯示名稱/備註"),
+        s("status", "身分狀態"),
+        s("joinDate", "加入日期"),
+        s("certification", "認證狀態"),
+        s("note", "備註"),
+        s("createdAt", "建立時間"),
+        s("createdBy", "建立者"),
+        s("updatedAt", "修改時間"),
+        s("updatedBy", "修改者"),
+        { key: "version", type: "number", label: "版本" }
+      ]
+    },
+    sessions: {
+      sheet: "Performance_Sessions",
+      idKey: "sessionId",
+      columns: [
+        s("sessionId", "排程ID"),
+        s("date", "演出日期"),
+        s("unit", "申請單位"),
+        s("topic", "教案主題"),
+        s("checkinTime", "報到時間"),
+        s("startTime", "演出開始"),
+        s("endTime", "演出結束"),
+        s("location", "演出地點"),
+        s("note", "備註"),
+        s("status", "排程狀態"),
+        s("cancelReason", "取消原因"),
+        s("calendarEventId", "Calendar Event ID"),
+        s("syncStatus", "同步狀態"),
+        s("syncError", "同步錯誤"),
+        s("syncedAt", "同步時間"),
+        { key: "isDeleted", type: "bool", label: "已刪除" },
+        s("deleteReason", "刪除原因"),
+        s("requestId", "請求ID"),
+        s("createdAt", "建立時間"),
+        s("createdBy", "建立者"),
+        s("updatedAt", "修改時間"),
+        s("updatedBy", "修改者"),
+        { key: "version", type: "number", label: "版本" }
+      ]
+    },
+    assignments: {
+      sheet: "Performance_Assignments",
+      idKey: "assignmentId",
+      columns: [
+        s("assignmentId", "明細ID"),
+        s("sessionId", "排程ID"),
+        s("spId", "SP_ID"),
+        s("spNameSnapshot", "SP姓名(快照)"),
+        s("attendance", "出席狀態"),
+        s("actualStart", "實際開始"),
+        s("actualEnd", "實際結束"),
+        { key: "approvedMinutes", type: "nullable-number", label: "核定分鐘" },
+        s("minutesNote", "時數備註"),
+        s("verifyStatus", "核定狀態"),
+        s("verifiedBy", "核定人員"),
+        s("verifiedAt", "核定時間"),
+        { key: "isDeleted", type: "bool", label: "已刪除" },
+        s("createdAt", "建立時間"),
+        s("updatedAt", "修改時間"),
+        s("updatedBy", "修改者"),
+        { key: "version", type: "number", label: "版本" }
+      ]
+    },
+    notifications: {
+      sheet: "Notification_Log",
+      idKey: "notificationId",
+      columns: [
+        s("notificationId", "紀錄ID"),
+        s("sessionId", "排程ID"),
+        s("assignmentId", "明細ID"),
+        s("spId", "SP_ID"),
+        s("status", "通知狀態"),
+        s("markedBy", "標記人員"),
+        s("markedAt", "標記時間"),
+        s("fingerprint", "排程指紋"),
+        s("note", "備註")
+      ]
+    },
+    audit: {
+      sheet: "Audit_Log",
+      idKey: "auditId",
+      columns: [
+        s("auditId", "稽核ID"),
+        s("at", "時間"),
+        s("actor", "操作人員"),
+        s("entity", "對象類型"),
+        s("entityId", "對象ID"),
+        s("action", "動作"),
+        s("before", "異動前"),
+        s("after", "異動後"),
+        s("note", "說明")
+      ]
+    }
+  };
+  var SETTINGS_SHEET = "System_Settings";
+  function toRow(t, obj) {
+    const def = TABLES[t];
+    return def.columns.map((c) => {
+      const v = obj[c.key];
+      if (c.type === "bool") return v ? "TRUE" : "FALSE";
+      if (v === null || v === void 0) return "";
+      return String(v);
+    });
+  }
+  function fromRow(t, header, row, fmtDate2) {
+    const def = TABLES[t];
+    const out = {};
+    for (const c of def.columns) {
+      const idx = header.indexOf(c.key);
+      let v = idx >= 0 ? row[idx] : "";
+      if (v instanceof Date) {
+        const kind = /Time$|^actual/.test(c.key) ? "time" : c.key === "date" || c.key === "joinDate" ? "date" : "datetime";
+        v = fmtDate2(v, kind);
+      }
+      if (c.type === "number") out[c.key] = Number(v) || 0;
+      else if (c.type === "nullable-number") out[c.key] = v === "" || v === null || v === void 0 ? null : Number(v);
+      else if (c.type === "bool") out[c.key] = v === true || String(v).toUpperCase() === "TRUE";
+      else out[c.key] = v === null || v === void 0 ? "" : String(v);
+    }
+    return out;
+  }
+
+  // server/gas/sheetsRepo.ts
+  function fmtGasDate(d, kind) {
+    if (kind === "date") return Utilities.formatDate(d, TZ, "yyyy-MM-dd");
+    if (kind === "time") return Utilities.formatDate(d, TZ, "HH:mm");
+    return Utilities.formatDate(d, TZ, "yyyy-MM-dd'T'HH:mm:ssXXX");
+  }
+  var unescape = (v) => typeof v === "string" && /^'[=+@]/.test(v) ? v.slice(1) : v;
+  function createSheetsRepo(ss) {
+    const cache = /* @__PURE__ */ new Map();
+    let settingsCache = null;
+    function sheetOf(name) {
+      const sh = ss.getSheetByName(name);
+      if (!sh) throw new AppError("NOT_CONFIGURED", `找不到工作表「${name}」，請先執行 setupSpreadsheet 初始化`);
+      return sh;
+    }
+    function load(t) {
+      const hit = cache.get(t);
+      if (hit) return hit;
+      const def = TABLES[t];
+      const sheet = sheetOf(def.sheet);
+      const values = sheet.getDataRange().getValues();
+      const header = (values[0] || []).map(String);
+      const idIdx = header.indexOf(def.idKey);
+      if (idIdx < 0) throw new AppError("NOT_CONFIGURED", `工作表「${def.sheet}」缺少主鍵欄位 ${def.idKey}`);
+      const rows = [], rowNumbers = [], ids = [];
+      for (let i = 1; i < values.length; i++) {
+        const id = String(values[i][idIdx] || "");
+        if (!id) continue;
+        const obj = fromRow(t, header, values[i].map(unescape), fmtGasDate);
+        rows.push(obj);
+        rowNumbers.push(i + 1);
+        ids.push(id);
+      }
+      const loaded = { sheet, header, rows, rowNumbers, ids };
+      cache.set(t, loaded);
+      return loaded;
+    }
+    function toSheetRow(t, header, obj) {
+      const def = TABLES[t];
+      const vals = toRow(t, obj);
+      return header.map((h) => {
+        const i = def.columns.findIndex((c) => c.key === h);
+        return i >= 0 ? sheetSafe(vals[i]) : "";
+      });
+    }
+    return {
+      refresh() {
+        cache.clear();
+        settingsCache = null;
+        SpreadsheetApp.flush();
+      },
+      all(t) {
+        return load(t).rows.map((r) => ({ ...r }));
+      },
+      insert(t, rows) {
+        if (!rows.length) return;
+        const L = load(t);
+        const data = rows.map((r) => toSheetRow(t, L.header, r));
+        const start = L.sheet.getLastRow() + 1;
+        const range = L.sheet.getRange(start, 1, data.length, L.header.length);
+        range.setNumberFormat("@");
+        range.setValues(data);
+        const idKey = TABLES[t].idKey;
+        rows.forEach((r, i) => {
+          L.rows.push({ ...r });
+          L.rowNumbers.push(start + i);
+          L.ids.push(String(r[idKey]));
+        });
+      },
+      update(t, row) {
+        const L = load(t);
+        const idKey = TABLES[t].idKey;
+        const id = String(row[idKey]);
+        const i = L.ids.indexOf(id);
+        if (i < 0) throw new AppError("NOT_FOUND", "找不到要更新的資料列：" + id);
+        const range = L.sheet.getRange(L.rowNumbers[i], 1, 1, L.header.length);
+        range.setNumberFormat("@");
+        range.setValues([toSheetRow(t, L.header, row)]);
+        L.rows[i] = { ...row };
+      },
+      getSettings() {
+        var _a;
+        if (settingsCache) return { ...settingsCache };
+        const values = sheetOf(SETTINGS_SHEET).getDataRange().getValues();
+        const out = {};
+        for (let i = 1; i < values.length; i++) if (values[i][0]) out[String(values[i][0])] = String((_a = unescape(values[i][1])) != null ? _a : "");
+        settingsCache = out;
+        return { ...out };
+      },
+      setSettings(kv) {
+        const sh = sheetOf(SETTINGS_SHEET);
+        const values = sh.getDataRange().getValues();
+        const now = fmtGasDate(/* @__PURE__ */ new Date(), "datetime");
+        for (const [k, v] of Object.entries(kv)) {
+          const idx = values.findIndex((r, i) => i > 0 && r[0] === k);
+          if (idx > 0) sh.getRange(idx + 1, 2, 1, 2).setValues([[sheetSafe(v), now]]);
+          else {
+            sh.appendRow([k, sheetSafe(v), now]);
+            values.push([k, v, now]);
+          }
+        }
+        settingsCache = null;
+      }
+    };
+  }
+
+  // server/gas/calendarGateway.ts
+  var TAG = "spHubSessionId";
+  function getCal(calendarId) {
+    const cal = CalendarApp.getCalendarById(calendarId);
+    if (!cal) throw new Error(`找不到行事曆或沒有權限：${calendarId}（請確認已將此行事曆以「變更活動」權限分享給操作中的管理員帳號）`);
+    return cal;
+  }
+  function findByTag(cal, date, sessionId) {
+    const day = /* @__PURE__ */ new Date(`${date}T00:00:00+08:00`);
+    const from = new Date(day.getTime() - 864e5);
+    const to = new Date(day.getTime() + 2 * 864e5);
+    return cal.getEvents(from, to).find((e) => e.getTag(TAG) === sessionId) || null;
+  }
+  function safeGetById(cal, eventId) {
+    if (!eventId) return null;
+    try {
+      return cal.getEventById(eventId);
+    } catch {
+      return null;
+    }
+  }
+  var gasCalendar = {
+    upsert(calendarId, eventId, ev) {
+      const cal = getCal(calendarId);
+      const start = new Date(ev.startIso);
+      const end = new Date(ev.endIso);
+      let event = safeGetById(cal, eventId) || findByTag(cal, ev.date, ev.sessionId);
+      if (event) {
+        event.setTitle(ev.title);
+        event.setTime(start, end);
+        event.setDescription(ev.description);
+        event.setLocation(ev.location);
+      } else {
+        event = cal.createEvent(ev.title, start, end, { description: ev.description, location: ev.location });
+      }
+      event.setTag(TAG, ev.sessionId);
+      event.removeAllReminders();
+      if (ev.reminderMinutes !== null && ev.reminderMinutes > 0) event.addPopupReminder(Math.min(ev.reminderMinutes, 40320));
+      return event.getId();
+    },
+    remove(calendarId, eventId, sessionId, date) {
+      const cal = getCal(calendarId);
+      const event = safeGetById(cal, eventId) || findByTag(cal, date, sessionId);
+      if (event) event.deleteEvent();
+    }
+  };
+
+  // server/gas/main.ts
+  var props = () => PropertiesService.getScriptProperties();
+  function adminList() {
+    return (props().getProperty("ADMIN_EMAILS") || "").split(/[,\s;]+/).map((s2) => s2.trim().toLowerCase()).filter(Boolean);
+  }
+  function currentEmail() {
+    return (Session.getActiveUser().getEmail() || "").toLowerCase();
+  }
+  function openSpreadsheet() {
+    const id = props().getProperty("SPREADSHEET_ID");
+    if (!id) throw new Error("尚未設定 SPREADSHEET_ID，請先在 Apps Script 編輯器執行 setupSpreadsheet");
+    return SpreadsheetApp.openById(id);
+  }
+  function buildEnv(ss) {
+    return {
+      user: currentEmail,
+      isAdmin: (email) => adminList().includes(email.toLowerCase()),
+      nowIso: () => fmtGasDate(/* @__PURE__ */ new Date(), "datetime"),
+      today: () => Utilities.formatDate(/* @__PURE__ */ new Date(), TZ, "yyyy-MM-dd"),
+      randomId: () => Utilities.getUuid().replace(/-/g, "").slice(0, 8).toUpperCase(),
+      withLock(fn) {
+        const lock = LockService.getScriptLock();
+        if (!lock.tryLock(25e3)) throw new Error("lock timeout");
+        try {
+          return fn();
+        } finally {
+          SpreadsheetApp.flush();
+          lock.releaseLock();
+        }
+      },
+      backup() {
+        const stamp = Utilities.formatDate(/* @__PURE__ */ new Date(), TZ, "yyyyMMdd-HHmm");
+        const copy = SpreadsheetApp.create(`SP Performance Hub 備份 ${stamp}`);
+        const names = [...Object.values(TABLES).map((t) => t.sheet), SETTINGS_SHEET];
+        for (const n of names) {
+          const sh = ss.getSheetByName(n);
+          if (sh) sh.copyTo(copy).setName(n);
+        }
+        const first = copy.getSheets()[0];
+        if (first.getName().startsWith("Sheet") || first.getName().startsWith("工作表")) copy.deleteSheet(first);
+        return { name: copy.getName(), url: copy.getUrl() };
+      },
+      health() {
+        const settingsCal = (() => {
+          var _a;
+          const v = (_a = ss.getSheetByName(SETTINGS_SHEET)) == null ? void 0 : _a.getDataRange().getValues().find((r) => r[0] === "calendarId");
+          return v ? String(v[1]) : "";
+        })();
+        let calendarOk = false, calendarName = "", calendarError = "";
+        if (!settingsCal) calendarError = "尚未設定 Calendar ID";
+        else {
+          try {
+            const cal = CalendarApp.getCalendarById(settingsCal);
+            if (!cal) calendarError = "找不到行事曆或沒有權限";
+            else {
+              calendarOk = true;
+              calendarName = cal.getName();
+            }
+          } catch (e) {
+            calendarError = String(e.message || e);
+          }
+        }
+        return {
+          spreadsheetOk: true,
+          spreadsheetName: ss.getName(),
+          sheets: [...Object.values(TABLES).map((t) => t.sheet), SETTINGS_SHEET].map((name) => {
+            const sh = ss.getSheetByName(name);
+            return { name, ok: !!sh, rows: sh ? Math.max(0, sh.getLastRow() - 1) : 0 };
+          }),
+          calendarOk,
+          calendarName,
+          calendarError,
+          user: currentEmail(),
+          timezone: Session.getScriptTimeZone()
+        };
+      }
+    };
+  }
+  function doGet() {
+    const email = currentEmail();
+    if (!email || !adminList().includes(email)) {
+      const t = HtmlService.createTemplate(
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+      body{font-family:system-ui,"Noto Sans TC",sans-serif;background:#F7F4ED;color:#252B2D;display:grid;place-items:center;min-height:100vh;margin:0}
+      main{max-width:440px;padding:40px;background:#fff;border-radius:20px;border:1px solid #e6e1d6}
+      h1{font-size:22px;color:#284A45;margin:0 0 12px}p{line-height:1.7;color:#555}</style></head>
+      <body><main><h1>無存取權限</h1><p>帳號 <b><?= email ?></b> 未獲授權使用 SP Performance Hub。</p>
+      <p>如需使用，請聯絡臨床技能中心系統管理員將您的 Google 帳號加入管理員名單。</p></main></body></html>`
+      );
+      t.email = email || "（無法取得，請確認已登入 Google 帳號）";
+      return t.evaluate().setTitle("SP Performance Hub｜無存取權限");
+    }
+    return HtmlService.createHtmlOutputFromFile("index").setTitle("SP Performance Hub｜標準化病人演出歷程管理平台").addMetaTag("viewport", "width=device-width, initial-scale=1").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+  }
+  function api(action, payloadJson) {
+    let payload = {};
+    try {
+      payload = payloadJson ? JSON.parse(payloadJson) : {};
+    } catch {
+      return JSON.stringify({ ok: false, error: { code: "VALIDATION", message: "請求格式錯誤" } });
+    }
+    try {
+      const email = currentEmail();
+      if (!email || !adminList().includes(email)) {
+        return JSON.stringify({ ok: false, error: { code: email ? "FORBIDDEN" : "UNAUTHENTICATED", message: "未授權的帳號" } });
+      }
+      const ss = openSpreadsheet();
+      const svc = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss), calendar: gasCalendar });
+      return JSON.stringify(svc.dispatch(action, payload));
+    } catch (e) {
+      return JSON.stringify({ ok: false, error: { code: "NOT_CONFIGURED", message: String(e.message || e) } });
+    }
+  }
+  function setupSpreadsheet() {
+    const p = props();
+    let id = p.getProperty("SPREADSHEET_ID");
+    const ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.create("SP Performance Hub 資料庫");
+    if (!id) {
+      id = ss.getId();
+      p.setProperty("SPREADSHEET_ID", id);
+    }
+    ss.setSpreadsheetTimeZone(TZ);
+    const ensure = (name, header, labels) => {
+      let sh = ss.getSheetByName(name);
+      if (!sh) sh = ss.insertSheet(name);
+      const cur = sh.getLastColumn() ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String) : [];
+      const missing = header.filter((h) => !cur.includes(h));
+      if (missing.length) {
+        sh.getRange(1, cur.length + 1, 1, missing.length).setValues([missing]);
+        missing.forEach((h, i) => {
+          const label = labels[header.indexOf(h)];
+          if (label) sh.getRange(1, cur.length + 1 + i).setNote(label);
+        });
+      }
+      const cols = sh.getLastColumn();
+      sh.getRange(1, 1, sh.getMaxRows(), cols).setNumberFormat("@");
+      sh.getRange(1, 1, 1, cols).setFontWeight("bold").setBackground("#284A45").setFontColor("#FFFFFF");
+      sh.setFrozenRows(1);
+      const prot = sh.getRange(1, 1, 1, cols).protect().setDescription("表頭由系統管理，請勿修改");
+      prot.setWarningOnly(true);
+      return sh;
+    };
+    for (const t of Object.values(TABLES)) ensure(t.sheet, t.columns.map((c) => c.key), t.columns.map((c) => c.label));
+    const st = ensure(SETTINGS_SHEET, ["key", "value", "updatedAt"], ["設定鍵", "設定值", "更新時間"]);
+    const existing = st.getDataRange().getValues().map((r) => String(r[0]));
+    const now = fmtGasDate(/* @__PURE__ */ new Date(), "datetime");
+    for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) {
+      if (!existing.includes(k)) st.appendRow([k, typeof v === "string" ? v : JSON.stringify(v), now]);
+    }
+    const blank = ss.getSheetByName("Sheet1") || ss.getSheetByName("工作表1");
+    if (blank && ss.getSheets().length > 1) ss.deleteSheet(blank);
+    if (!adminList().length) {
+      const me = currentEmail();
+      if (me) p.setProperty("ADMIN_EMAILS", me);
+    }
+    Logger.log("✅ 初始化完成：%s", ss.getUrl());
+    Logger.log("管理員：%s", adminList().join(", ") || "（未設定，請於 Script Properties 設定 ADMIN_EMAILS）");
+    return ss.getUrl();
+  }
+  function healthCheck() {
+    const ss = openSpreadsheet();
+    const r = buildEnv(ss).health();
+    Logger.log(JSON.stringify(r, null, 2));
+    return r;
+  }
+  return __toCommonJS(main_exports);
+})();
+
+function doGet() { return SPHub.doGet.apply(null, arguments); }
+function api() { return SPHub.api.apply(null, arguments); }
+function setupSpreadsheet() { return SPHub.setupSpreadsheet.apply(null, arguments); }
+function healthCheck() { return SPHub.healthCheck.apply(null, arguments); }
