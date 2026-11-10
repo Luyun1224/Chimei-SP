@@ -183,3 +183,23 @@ export function validateVerifyInput(raw: VerifyInput): VerifyInput & { approvedM
 export function sheetSafe(s: string): string {
   return /^[=+@]/.test(s) ? `'${s}` : s;
 }
+
+/** 學會認證到期年（民國）：「113-115」→ 115；無法判斷回傳 null */
+export function certExpiryYear(assocCert: string): number | null {
+  const m = /(\d{2,3})\s*$/.exec((assocCert || '').trim());
+  return m ? Number(m[1]) : null;
+}
+
+/** 是否已認證：有學會認證期間或證書字號，且證書狀態不是「尚未認證」 */
+export function isCertified(p: { assocCert: string; certNo: string; certStatus: string }): boolean {
+  if (p.certStatus === '尚未認證') return false;
+  return !!(certExpiryYear(p.assocCert) || p.certNo);
+}
+
+export type ExpiryBucket = 'expired' | 'thisYear' | 'nextYear' | 'later' | 'none';
+export function expiryBucket(assocCert: string, today: string): ExpiryBucket {
+  const y = certExpiryYear(assocCert);
+  if (!y) return 'none';
+  const now = Number(today.slice(0, 4)) - 1911;
+  return y < now ? 'expired' : y === now ? 'thisYear' : y === now + 1 ? 'nextYear' : 'later';
+}

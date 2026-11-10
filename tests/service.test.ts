@@ -359,6 +359,20 @@ describe('SP 名冊欄位', () => {
   });
 });
 
+describe('認證到期篩選', () => {
+  it('到期年與分類', async () => {
+    const { certExpiryYear, expiryBucket, isCertified } = await import('../shared/validate');
+    expect(certExpiryYear('113-115')).toBe(115);
+    expect(certExpiryYear('')).toBeNull();
+    expect(expiryBucket('110-112', '2026-11-10')).toBe('expired');
+    expect(expiryBucket('113-115', '2026-11-10')).toBe('thisYear');
+    expect(expiryBucket('114-116', '2026-11-10')).toBe('nextYear');
+    expect(expiryBucket('115-117', '2026-11-10')).toBe('later');
+    expect(isCertified({ assocCert: '113-115', certNo: '', certStatus: '符合' })).toBe(true);
+    expect(isCertified({ assocCert: '', certNo: '', certStatus: '尚未認證' })).toBe(false);
+  });
+});
+
 describe('權限', () => {
   it('未登入與未授權帳號無法存取資料', () => {
     env.setUser('');
