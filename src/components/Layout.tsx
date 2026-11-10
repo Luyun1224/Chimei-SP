@@ -18,10 +18,13 @@ export const NAV = [
   { no: '07', path: '/settings', label: '系統設定', en: 'Settings', icon: Settings },
 ];
 
+const PUBLIC_NAV = ['/overview', '/schedule', '/analytics'];
 function NavList({ route, onNav }: { route: Route; onNav?: () => void }) {
+  const { snap } = useData();
+  const items = snap?.access === 'public' ? NAV.filter((n) => PUBLIC_NAV.includes(n.path)) : NAV;
   return (
     <nav aria-label="主要導覽" className="flex flex-col gap-0.5">
-      {NAV.map((n) => {
+      {items.map((n) => {
         const on = '/' + (route.parts[0] || 'overview') === n.path || (n.path === '/analytics' && route.parts[0] === 'report');
         const Icon = n.icon;
         return (
@@ -70,7 +73,7 @@ export function Layout({ route, children }: { route: Route; children: ReactNode 
         </div>
         <div className="space-y-1 px-3 text-[12px] text-white/50">
           {snap && <div className="truncate" title={snap.user.email}>👤 {snap.user.email}</div>}
-          {isRemote() && <button className="underline underline-offset-2 hover:text-white" onClick={() => { signOut(); window.location.hash = '#/overview'; window.location.reload(); }}>解除此裝置綁定</button>}
+          {isRemote() && snap?.access !== 'public' && <button className="underline underline-offset-2 hover:text-white" onClick={() => { signOut(); window.location.hash = '#/overview'; window.location.reload(); }}>解除此裝置綁定</button>}
           <div>時區 Asia/Taipei</div>
         </div>
       </aside>
@@ -108,6 +111,12 @@ export function Layout({ route, children }: { route: Route; children: ReactNode 
         )}
       </AnimatePresence>
 
+      {snap?.access === 'public' && (
+        <div className="no-print border-b border-sage bg-pine-50 px-4 py-2 text-center text-[13px] text-pine lg:px-10">
+          <b>公開檢視</b>：僅顯示排程與統計，SP 姓名已遮蔽、不含任何個人資料，且無法修改。
+          <a className="ml-2 underline underline-offset-2" href="#/bind">管理者登入</a>
+        </div>
+      )}
       {snap?.mode === 'demo' && (
         <div className="no-print border-b border-gold/40 bg-gold-50 px-4 py-2 text-center text-[13px] text-gold-600 lg:px-10">
           <b>本機示範模式</b>：資料僅存於此瀏覽器、日曆同步為模擬，未連線 Google Sheets / Calendar。正式使用請依部署文件發佈至 Apps Script。

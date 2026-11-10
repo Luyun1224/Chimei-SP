@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ChevronLeft, ChevronRight, Download, Plus, Search } from 'lucide-react';
 import type { Session, SessionStatus } from '../../shared/types';
 import { addDays, fmtDate, fmtDateShort, startOfWeek, toMinutes, weekdayLabel } from '../../shared/time';
-import { useSnap, spName } from '../lib/store';
+import { useCanEdit, useSnap, spName } from '../lib/store';
 import { navigate, type Route } from '../lib/router';
 import { download, toCsv } from '../lib/csv';
 import { useSessionUI } from '../features/sessions';
@@ -19,6 +19,7 @@ export default function Schedule({ route }: { route: Route }) {
   const setView = (v: ViewKind) => navigate('/schedule', { view: v, date: anchor });
   const setAnchor = (dt: string) => navigate('/schedule', { view, date: dt });
   const ui = useSessionUI();
+  const canEdit = useCanEdit();
 
   const shift = (dir: number) => {
     if (view === 'week') return setAnchor(addDays(anchor, dir * 7));
@@ -38,7 +39,7 @@ export default function Schedule({ route }: { route: Route }) {
         en="Schedule"
         title="演出排程"
         desc="點擊日期即可新增排程；點擊演出卡片於側邊開啟詳情。儲存後自動同步至管理員指定的 Google 日曆，不會邀請或通知 SP。"
-        actions={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => ui.openNew()}>新增演出</Button>}
+        actions={canEdit ? <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => ui.openNew()}>新增演出</Button> : undefined}
       />
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <Segmented label="檢視" value={view} onChange={setView} options={[{ value: 'month', label: '月' }, { value: 'week', label: '週' }, { value: 'list', label: '清單' }]} />
@@ -139,7 +140,7 @@ function MonthView({ anchor }: { anchor: string }) {
             >
               <div className="mb-1 flex items-center justify-between">
                 <span className={cx('num inline-flex size-6 items-center justify-center rounded-full text-[12px]', isToday ? 'bg-gold text-ink font-semibold' : inMonth ? 'text-ink' : 'text-ink-3/60')}>{Number(day.slice(8))}</span>
-                <Plus className="size-3.5 text-ink-3 opacity-0 transition group-hover:opacity-100" aria-hidden />
+                {snap.access !== 'public' && <Plus className="size-3.5 text-ink-3 opacity-0 transition group-hover:opacity-100" aria-hidden />}
               </div>
               <div className="space-y-1">
                 {list.slice(0, 3).map((s) => <SessionChip key={s.sessionId} s={s} />)}
@@ -208,7 +209,7 @@ function WeekView({ anchor }: { anchor: string }) {
           <div key={day} className="rounded-[18px] border border-line bg-white p-3">
             <div className="mb-2 flex items-center justify-between">
               <b className={cx('text-[14px]', day === snap.today && 'text-gold-600')}>{fmtDate(day)}</b>
-              <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => ui.openNew({ date: day })}>新增</Button>
+              {snap.access !== 'public' && <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => ui.openNew({ date: day })}>新增</Button>}
             </div>
             <div className="space-y-1.5">
               {(byDate.get(day) || []).map((s) => <SessionChip key={s.sessionId} s={s} />)}

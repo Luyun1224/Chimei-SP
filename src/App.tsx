@@ -37,8 +37,13 @@ function Pages() {
     );
   }
 
+  if (route.parts[0] === 'bind') return <LoginScreen onDone={async () => { window.location.hash = '#/overview'; await reload(); }} />;
+  const isPublic = snap?.access === 'public';
+  const PUBLIC_PAGES = ['overview', 'schedule', 'analytics', 'report'];
   const page = (() => {
-    switch (route.parts[0] || 'overview') {
+    const key = route.parts[0] || 'overview';
+    if (isPublic && !PUBLIC_PAGES.includes(key)) return <Overview />;
+    switch (key) {
       case 'schedule': return <Schedule route={route} />;
       case 'reminder': return <Reminder route={route} />;
       case 'sps': return route.parts[1] ? <SpProfile route={route} /> : <Directory />;

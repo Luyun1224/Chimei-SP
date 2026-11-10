@@ -494,6 +494,7 @@ var SPHub = (() => {
       bootstrap: () => ({
         mode: "gas",
         apiVersion: API_VERSION,
+        access: "full",
         user: { email: env.user(), isAdmin: true },
         today: env.today(),
         serverTime: env.nowIso(),
@@ -915,7 +916,8 @@ var SPHub = (() => {
       try {
         const email = env.user();
         if (!email) throw new AppError("UNAUTHENTICATED", "無法取得登入身分，請以 Google 帳號登入");
-        if (!email.startsWith("device:") && !env.isAdmin(email)) throw new AppError("FORBIDDEN", `帳號 ${email} 未獲授權使用本系統，請聯絡臨床技能中心管理員`);
+        const internalPublic = email === "public@system" && action === "bootstrap";
+        if (!internalPublic && !email.startsWith("device:") && !env.isAdmin(email)) throw new AppError("FORBIDDEN", `帳號 ${email} 未獲授權使用本系統，請聯絡臨床技能中心管理員`);
         const h = handlers[action];
         if (!h) throw new AppError("VALIDATION", `未知的操作：${String(action)}`);
         return { ok: true, data: h(payload || {}) };
@@ -931,6 +933,88 @@ var SPHub = (() => {
       }
     }
     return { dispatch, handlers, getSettings };
+  }
+
+  // server/public.ts
+  function maskName(name) {
+    const s2 = [...String(name || "").trim()];
+    if (s2.length <= 1) return s2.length ? "○" : "";
+    if (s2.length === 2) return s2[0] + "○";
+    return s2[0] + "○".repeat(s2.length - 2) + s2[s2.length - 1];
+  }
+  function publicSp(p) {
+    return {
+      spId: p.spId,
+      name: maskName(p.name),
+      status: p.status,
+      gender: "",
+      birthday: "",
+      firstCertYear: "",
+      assocCert: "",
+      certNo: "",
+      role: "",
+      level: "",
+      certStatus: "",
+      isMember: "",
+      phone: "",
+      email: "",
+      lineNote: "",
+      note: "",
+      createdAt: "",
+      createdBy: "",
+      updatedAt: "",
+      updatedBy: "",
+      version: 0
+    };
+  }
+  function publicSession(s2) {
+    return {
+      ...s2,
+      note: "",
+      cancelReason: "",
+      deleteReason: "",
+      requestId: "",
+      calendarEventId: "",
+      syncError: "",
+      createdBy: "",
+      updatedBy: "",
+      createdAt: "",
+      updatedAt: "",
+      version: 0
+    };
+  }
+  function publicAssignment(a) {
+    return {
+      ...a,
+      spNameSnapshot: maskName(a.spNameSnapshot),
+      minutesNote: "",
+      verifiedBy: "",
+      updatedBy: "",
+      verifiedAt: "",
+      createdAt: "",
+      updatedAt: "",
+      version: 0
+    };
+  }
+  function publicSnapshot(s2) {
+    return {
+      mode: s2.mode,
+      apiVersion: s2.apiVersion,
+      access: "public",
+      user: { email: "", isAdmin: false },
+      today: s2.today,
+      serverTime: s2.serverTime,
+      sps: s2.sps.map(publicSp),
+      sessions: s2.sessions.map(publicSession),
+      assignments: s2.assignments.filter((a) => !a.isDeleted).map(publicAssignment),
+      notifications: [],
+      settings: { ...DEFAULT_SETTINGS, units: s2.settings.units, topics: s2.settings.topics, locations: s2.settings.locations, calendarId: "", individualTemplate: "", summaryTemplate: "" }
+    };
+  }
+  function publicDispatch(action, full) {
+    if (action !== "bootstrap") return { ok: false, error: { code: "FORBIDDEN", message: "公開檢視模式為唯讀，請以管理者專屬網址開啟" } };
+    const r = full();
+    return r.ok ? { ok: true, data: publicSnapshot(r.data) } : r;
   }
 
   // server/schema.ts
@@ -1448,37 +1532,6 @@ var SPHub = (() => {
   function doGet(e) {
     var _a;
     if ((_a = e == null ? void 0 : e.parameter) == null ? void 0 : _a.login) return loginPage(String(e.parameter.return || ""));
-    const email = currentEmail();
-    if (!email || !adminList().includes(email)) {
-      const t = HtmlService.createTemplate(
-        `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-      body{font-family:system-ui,"Noto Sans TC",sans-serif;background:#F7F4ED;color:#252B2D;display:grid;place-items:center;min-height:100vh;margin:0;padding:16px;box-sizing:border-box}
-      main{max-width:560px;padding:36px;background:#fff;border-radius:20px;border:1px solid #e6e1d6}
-      h1{font-size:22px;color:#284A45;margin:0 0 12px}p,li{line-height:1.75;color:#555;font-size:14px}ol{padding-left:20px}
-      a.btn{display:inline-block;margin-top:8px;padding:10px 18px;border-radius:999px;background:#284A45;color:#fff;text-decoration:none;font-size:14px}</style></head>
-      <body><main>
-      <? if (email) { ?>
-        <h1>無存取權限</h1><p>帳號 <b><?= email ?></b> 未獲授權使用 SP Performance Hub。</p>
-        <p>如需使用，請聯絡臨床技能中心系統管理員將您的 Google 帳號加入管理員名單（Script Properties 的 ADMIN_EMAILS）。</p>
-      <? } else { ?>
-        <h1>無法辨識您的 Google 帳號</h1>
-        <p>系統沒有收到登入身分，通常是以下原因之一：</p>
-        <ol>
-          <li><b>部署設定</b>：Apps Script「管理部署作業」中，執行身分須為「<b>存取網頁應用程式的使用者</b>」，存取權須為「<b>任何擁有 Google 帳戶的使用者</b>」（或貴院網域），不可選「任何人」。</li>
-          <li><b>從 GitHub 網址嵌入開啟時</b>：瀏覽器封鎖了第三方 Cookie（無痕視窗預設會封鎖）。請到 Chrome「設定 → 隱私權和安全性 → 第三方 Cookie → 允許使用第三方 Cookie 的網站」加入 <b>luyun1224.github.io</b>，或改用下方按鈕直接開啟。</li>
-        </ol>
-        <a class="btn" href="<?= url ?>" target="_top" rel="noopener">直接開啟系統</a>
-      <? } ?>
-      <script>
-        // 通知外層入口頁（GitHub）：嵌入時無法取得登入身分 → 入口頁會自動改為直接開啟
-        try { window.top.postMessage({ source: 'sp-hub', type: '<?= email ? "forbidden" : "auth-failed" ?>' }, '*'); } catch (e) {}
-      <\/script>
-      </main></body></html>`
-      );
-      t.email = email;
-      t.url = ScriptApp.getService().getUrl();
-      return t.evaluate().setTitle("SP Performance Hub｜無存取權限").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-    }
     return HtmlService.createHtmlOutput(appShell()).setTitle("SP Performance Hub｜標準化病人演出歷程管理平台").addMetaTag("viewport", "width=device-width, initial-scale=1").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
   function api(action, payloadJson) {
@@ -1490,10 +1543,11 @@ var SPHub = (() => {
     }
     try {
       const email = currentEmail();
-      if (!email || !adminList().includes(email)) {
-        return JSON.stringify({ ok: false, error: { code: email ? "FORBIDDEN" : "UNAUTHENTICATED", message: "未授權的帳號" } });
-      }
       const ss = openSpreadsheet();
+      if (!email || !adminList().includes(email)) {
+        const owner = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss, "public@system"), calendar: gasCalendar });
+        return JSON.stringify(publicDispatch(action, () => owner.dispatch("bootstrap", {})));
+      }
       const svc = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss), calendar: gasCalendar });
       return JSON.stringify(svc.dispatch(action, payload));
     } catch (e) {
@@ -1685,7 +1739,7 @@ var SPHub = (() => {
     }
     if (req.action === "auth.pair") return out(pairDevice(req));
     const email = verifyToken(req.token || "");
-    if (!email) return out({ ok: false, error: { code: "UNAUTHENTICATED", message: "此裝置尚未綁定或綁定已失效，請輸入存取碼" } });
+    if (!email) return publicPost(String(req.action || ""), out, !!req.token);
     if (!email.startsWith(DEVICE_PREFIX) && !adminList().includes(email)) return out({ ok: false, error: { code: "FORBIDDEN", message: `帳號 ${email} 未獲授權` } });
     if (tokenExpiry(req.token || "") - Date.now() < RENEW_BELOW_DAYS * 864e5) {
       const renewToken = issueToken(email);
@@ -1731,6 +1785,17 @@ var SPHub = (() => {
     const c = accessCode(true);
     Logger.log("🔗 新的專屬網址：https://luyun1224.github.io/Chimei-SP/#k=%s（舊網址與裝置已全部失效）", c);
     return c;
+  }
+  function publicPost(action, out, hadToken) {
+    const flag = (r) => out(hadToken ? { ...r, tokenInvalid: true } : r);
+    if (action !== "bootstrap") return flag(publicDispatch(action, () => ({ ok: false, error: { code: "INTERNAL", message: "" } })));
+    try {
+      const ss = openSpreadsheet();
+      const svc = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss, "public@system"), calendar: gasCalendar });
+      return flag(publicDispatch(action, () => svc.dispatch("bootstrap", {})));
+    } catch (err) {
+      return flag({ ok: false, error: { code: "NOT_CONFIGURED", message: String(err.message || err) } });
+    }
   }
   return __toCommonJS(main_exports);
 })();

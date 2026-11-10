@@ -7,7 +7,7 @@ import { addDays, diffMinutes, fmtDate, fmtDateShort, fmtDuration, toMinutes } f
 import { notifyState } from '../../shared/template';
 import { topicOf } from '../../shared/stats';
 import { API_VERSION } from '../../shared/version';
-import { useData, spName } from '../lib/store';
+import { useCanEdit, useData, spName } from '../lib/store';
 import { ApiCallError, call, newRequestId } from '../lib/api';
 import { navigate } from '../lib/router';
 import { Drawer, Modal, useConfirm, useToast } from '../components/overlay';
@@ -28,13 +28,15 @@ export const useSessionUI = () => useContext(Ctx);
 export function SessionUIProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<View>(null);
   const close = useCallback(() => setView(null), []);
+  const canEdit = useCanEdit();
   const api = useMemo(
     () => ({
-      openNew: (prefill?: NewPrefill) => setView({ kind: 'new', prefill }),
+      // 公開檢視為唯讀：不開啟新增／編輯表單
+      openNew: (prefill?: NewPrefill) => { if (canEdit) setView({ kind: 'new', prefill }); },
       openDetail: (id: string) => setView({ kind: 'detail', id }),
-      openEdit: (id: string) => setView({ kind: 'edit', id }),
+      openEdit: (id: string) => { if (canEdit) setView({ kind: 'edit', id }); },
     }),
-    [],
+    [canEdit],
   );
   return (
     <Ctx.Provider value={api}>
@@ -304,6 +306,7 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
 // ======================= 詳情 =======================
 function SessionDetailDrawer({ id, onClose, onEdit, onCopy }: { id: string | null; onClose: () => void; onEdit: (id: string) => void; onCopy: (id: string) => void }) {
   const { snap, d, mutate } = useData();
+  const canEdit = useCanEdit();
   const toast = useToast();
   const confirm = useConfirm();
   const [busy, setBusy] = useState('');
@@ -334,7 +337,7 @@ function SessionDetailDrawer({ id, onClose, onEdit, onCopy }: { id: string | nul
       eyebrow={s ? `${fmtDate(s.date)} · ${s.unit}` : ''}
       title={s?.topic || '排程不存在'}
       footer={
-        s && s.status !== 'cancelled' ? (
+        s && s.status !== 'cancelled' && canEdit ? (
           <>
             <Button
               variant="ghost"
@@ -382,12 +385,12 @@ function SessionDetailDrawer({ id, onClose, onEdit, onCopy }: { id: string | nul
           <div className="flex flex-wrap items-center gap-2">
             <SessionBadge status={s.status} />
           </div>
-          <CalendarPanel s={s} busy={busy === 'sync'} onSync={() => run('sync', async () => {
+          {canEdit && <CalendarPanel s={s} busy={busy === 'sync'} onSync={() => run('sync', async () => {
             const r = await mutate('session.resync', { sessionId: s.sessionId });
             const st = r.sessions?.[0].syncStatus;
             if (st === 'disabled') throw new Error('尚未設定 Google 日曆，請到「系統設定」啟用');
             if (st !== 'synced' && st !== 'removed') throw new Error('仍無法同步：' + (r.sessions?.[0].syncError || ''));
-          }, '已排入 Google 日曆')} onSettings={() => { onClose(); navigate('/settings'); }} calendarConfigured={!!snap.settings.calendarId} />
+          }, '已排入 Google 日曆')} onSettings={() => { onClose(); navigate('/settings'); }} calendarConfigured={!!snap.settings.calendarId} />}
           {s.status === 'cancelled' && <p className="rounded-[12px] bg-mist px-3 py-2 text-[13px] text-ink-2">取消原因：{s.cancelReason}</p>}
 
           <dl className="grid grid-cols-2 gap-3">
@@ -418,13 +421,14 @@ function SessionDetailDrawer({ id, onClose, onEdit, onCopy }: { id: string | nul
                 </div>
               ))}
             </div>
-            {s.status === 'completed' && (
+            {s.status === 'completed' && canEdit && (
               <Button size="sm" variant="ghost" className="mt-2" onClick={() => { onClose(); navigate('/verify', { session: s.sessionId }); }}>
                 前往核定時數 →
               </Button>
             )}
           </section>
 
+          {canEdit && (
           <section>
             <button
               className="flex items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-pine"
@@ -442,6 +446,7 @@ function SessionDetailDrawer({ id, onClose, onEdit, onCopy }: { id: string | nul
             </button>
             {history && <AuditList items={history} />}
           </section>
+          )}
           <p className="text-[11px] text-ink-3">
             排程 ID：{s.sessionId} · 建立 {s.createdBy} {s.createdAt.slice(0, 16).replace('T', ' ')} · 最後修改 {s.updatedBy} {s.updatedAt.slice(0, 16).replace('T', ' ')}
           </p>

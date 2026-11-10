@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ActionName, ApiActions, Assignment, MutationResult, NotificationEntry, SP, Session, Snapshot } from '../../shared/types';
 import { latestNotifications } from '../../shared/template';
 import { ApiCallError, call } from './api';
-import { rememberLogin } from './remote';
+import { ensurePaired, rememberLogin } from './remote';
 
 interface Derived {
   spMap: Map<string, SP>;
@@ -64,7 +64,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    reload();
+    // 專屬網址：先綁定裝置再載入
+    ensurePaired().finally(() => reload());
   }, [reload]);
 
   const mutate = useCallback(async <A extends ActionName>(action: A, payload: ApiActions[A]['req']) => {
@@ -125,3 +126,9 @@ export function useSnap() {
 }
 
 export const spName = (d: Derived, a: Assignment) => d.spMap.get(a.spId)?.name || a.spNameSnapshot;
+
+/** 公開檢視（未綁定裝置）為唯讀 */
+export function useCanEdit(): boolean {
+  const { snap } = useData();
+  return snap?.access !== 'public';
+}

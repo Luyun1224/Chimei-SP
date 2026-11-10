@@ -10,6 +10,7 @@
  *  - 不使用任何 Client Secret / Refresh Token / 服務帳戶金鑰。
  */
 import { createService } from '../service';
+import { publicDispatch } from '../public';
 import { createSheetsRepo, fmtGasDate, settingFromSheet, settingKeyOf, settingToSheet } from './sheetsRepo';
 import { gasCalendar } from './calendarGateway';
 import { LEGACY_SETTINGS_SHEET, SETTINGS_HEADER, SETTINGS_SHEET, SETTING_LABELS, TABLES, fromRow, toRow, type TableName } from '../schema';
@@ -138,37 +139,7 @@ function appShell(): string {
 
 export function doGet(e?: GoogleAppsScript.Events.DoGet) {
   if (e?.parameter?.login) return loginPage(String(e.parameter.return || ''));
-  const email = currentEmail();
-  if (!email || !adminList().includes(email)) {
-    const t = HtmlService.createTemplate(
-      `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-      body{font-family:system-ui,"Noto Sans TC",sans-serif;background:#F7F4ED;color:#252B2D;display:grid;place-items:center;min-height:100vh;margin:0;padding:16px;box-sizing:border-box}
-      main{max-width:560px;padding:36px;background:#fff;border-radius:20px;border:1px solid #e6e1d6}
-      h1{font-size:22px;color:#284A45;margin:0 0 12px}p,li{line-height:1.75;color:#555;font-size:14px}ol{padding-left:20px}
-      a.btn{display:inline-block;margin-top:8px;padding:10px 18px;border-radius:999px;background:#284A45;color:#fff;text-decoration:none;font-size:14px}</style></head>
-      <body><main>
-      <? if (email) { ?>
-        <h1>無存取權限</h1><p>帳號 <b><?= email ?></b> 未獲授權使用 SP Performance Hub。</p>
-        <p>如需使用，請聯絡臨床技能中心系統管理員將您的 Google 帳號加入管理員名單（Script Properties 的 ADMIN_EMAILS）。</p>
-      <? } else { ?>
-        <h1>無法辨識您的 Google 帳號</h1>
-        <p>系統沒有收到登入身分，通常是以下原因之一：</p>
-        <ol>
-          <li><b>部署設定</b>：Apps Script「管理部署作業」中，執行身分須為「<b>存取網頁應用程式的使用者</b>」，存取權須為「<b>任何擁有 Google 帳戶的使用者</b>」（或貴院網域），不可選「任何人」。</li>
-          <li><b>從 GitHub 網址嵌入開啟時</b>：瀏覽器封鎖了第三方 Cookie（無痕視窗預設會封鎖）。請到 Chrome「設定 → 隱私權和安全性 → 第三方 Cookie → 允許使用第三方 Cookie 的網站」加入 <b>luyun1224.github.io</b>，或改用下方按鈕直接開啟。</li>
-        </ol>
-        <a class="btn" href="<?= url ?>" target="_top" rel="noopener">直接開啟系統</a>
-      <? } ?>
-      <script>
-        // 通知外層入口頁（GitHub）：嵌入時無法取得登入身分 → 入口頁會自動改為直接開啟
-        try { window.top.postMessage({ source: 'sp-hub', type: '<?= email ? "forbidden" : "auth-failed" ?>' }, '*'); } catch (e) {}
-      </script>
-      </main></body></html>`,
-    );
-    t.email = email;
-    t.url = ScriptApp.getService().getUrl();
-    return t.evaluate().setTitle('SP Performance Hub｜無存取權限').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  }
+  // 管理員（以 Google 帳號開啟）看到完整系統；其他人由 api() 回傳去識別化的公開檢視
   return HtmlService.createHtmlOutput(appShell())
     .setTitle('SP Performance Hub｜標準化病人演出歷程管理平台')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -187,10 +158,12 @@ export function api(action: string, payloadJson: string): string {
   }
   try {
     const email = currentEmail();
-    if (!email || !adminList().includes(email)) {
-      return JSON.stringify({ ok: false, error: { code: email ? 'FORBIDDEN' : 'UNAUTHENTICATED', message: '未授權的帳號' } });
-    }
     const ss = openSpreadsheet();
+    if (!email || !adminList().includes(email)) {
+      // 公開檢視：伺服器端去識別化、唯讀
+      const owner = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss, 'public@system'), calendar: gasCalendar });
+      return JSON.stringify(publicDispatch(action, () => owner.dispatch('bootstrap', {}) as never));
+    }
     const svc = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss), calendar: gasCalendar });
     return JSON.stringify(svc.dispatch(action as ActionName, payload as never));
   } catch (e) {
@@ -416,7 +389,7 @@ export function doPost(e: GoogleAppsScript.Events.DoPost) {
   }
   if (req.action === 'auth.pair') return out(pairDevice(req as { code?: string; device?: string }));
   const email = verifyToken(req.token || '');
-  if (!email) return out({ ok: false, error: { code: 'UNAUTHENTICATED', message: '此裝置尚未綁定或綁定已失效，請輸入存取碼' } });
+  if (!email) return publicPost(String(req.action || ''), out, !!req.token);
   if (!email.startsWith(DEVICE_PREFIX) && !adminList().includes(email)) return out({ ok: false, error: { code: 'FORBIDDEN', message: `帳號 ${email} 未獲授權` } });
   // 自動續期：使用中的裝置不需重新登入
   if (tokenExpiry(req.token || '') - Date.now() < RENEW_BELOW_DAYS * 86400000) {
@@ -471,4 +444,18 @@ export function rotateAccessCode() {
   const c = accessCode(true);
   Logger.log('🔗 新的專屬網址：https://luyun1224.github.io/Chimei-SP/#k=%s（舊網址與裝置已全部失效）', c);
   return c;
+}
+
+/** 未綁定（或綁定失效）的請求：公開檢視模式，伺服器端去識別化、唯讀 */
+function publicPost(action: string, out: (o: unknown) => GoogleAppsScript.Content.TextOutput, hadToken: boolean) {
+  // 曾綁定但已失效（例如更換了專屬網址）→ 前端清除舊綁定
+  const flag = (r: Record<string, unknown>) => out(hadToken ? { ...r, tokenInvalid: true } : r);
+  if (action !== 'bootstrap') return flag(publicDispatch(action, () => ({ ok: false, error: { code: 'INTERNAL', message: '' } })) as Record<string, unknown>);
+  try {
+    const ss = openSpreadsheet();
+    const svc = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss, 'public@system'), calendar: gasCalendar });
+    return flag(publicDispatch(action, () => svc.dispatch('bootstrap', {}) as never) as Record<string, unknown>);
+  } catch (err) {
+    return flag({ ok: false, error: { code: 'NOT_CONFIGURED', message: String((err as Error).message || err) } });
+  }
 }

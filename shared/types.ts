@@ -147,6 +147,8 @@ export interface Snapshot {
   mode: 'gas' | 'demo';
   /** 後端協定版本（舊版後端沒有此欄位） */
   apiVersion?: number;
+  /** public：未綁定裝置的公開檢視（去識別化、唯讀） */
+  access?: 'full' | 'public';
   user: CurrentUser;
   today: string;
   serverTime: string;

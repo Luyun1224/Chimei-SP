@@ -82,7 +82,7 @@ export default function SpProfile({ route }: { route: Route }) {
             {years.map((y) => <option key={y} value={y}>{y} 年</option>)}
           </select>
           <Button icon={<Download className="size-4" />} onClick={exportCsv} disabled={!records.length}>匯出履歷 CSV</Button>
-          <Button icon={<Pencil className="size-4" />} onClick={() => setEditing(true)}>編輯資料</Button>
+          {snap.access !== 'public' && <Button icon={<Pencil className="size-4" />} onClick={() => setEditing(true)}>編輯資料</Button>}
         </div>
       </header>
 

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { motion } from 'motion/react';
 import { ArrowUpRight, BarChart3, BellRing, CalendarDays, ClipboardCheck, Copy, Plus, Sparkles } from 'lucide-react';
-import { useSnap, spName } from '../lib/store';
+import { useCanEdit, useSnap, spName } from '../lib/store';
 import { computeOverview, needsVerification } from '../../shared/stats';
 import { addDays, fmtDate, fmtDateShort, fmtHours, weekdayLabel } from '../../shared/time';
 import { notifyState, renderSummary } from '../../shared/template';
@@ -16,6 +16,7 @@ const enter = (i: number) => ({ initial: { opacity: 0, y: 14 }, animate: { opaci
 
 export default function Overview() {
   const { snap, d } = useSnap();
+  const canEdit = useCanEdit();
   const ui = useSessionUI();
   const toast = useToast();
   const today = snap.today;
@@ -54,15 +55,15 @@ export default function Overview() {
           </h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => ui.openNew()}>新增演出</Button>
+          {canEdit && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => ui.openNew()}>新增演出</Button>}
           <Button icon={<CalendarDays className="size-4" />} onClick={() => navigate('/schedule', { view: 'week' })}>本週行程</Button>
-          <Button icon={<Copy className="size-4" />} onClick={copyTomorrow}>複製明日提醒</Button>
-          <Button icon={<ClipboardCheck className="size-4" />} onClick={() => navigate('/verify')}>確認已完成演出</Button>
+          {canEdit && <Button icon={<Copy className="size-4" />} onClick={copyTomorrow}>複製明日提醒</Button>}
+          {canEdit && <Button icon={<ClipboardCheck className="size-4" />} onClick={() => navigate('/verify')}>確認已完成演出</Button>}
           <Button icon={<BarChart3 className="size-4" />} onClick={() => navigate('/analytics')}>年度成果</Button>
         </div>
       </header>
 
-      {!snap.settings.calendarId && (
+      {canEdit && !snap.settings.calendarId && (
         <button onClick={() => navigate('/settings')} className="mb-4 flex w-full items-center gap-2 rounded-[16px] border border-gold/50 bg-gold-50 px-4 py-3 text-left text-[14px] text-ink">
           <CalendarDays className="size-4 shrink-0 text-gold-600" />
           尚未啟用 Google 日曆，新增的排程不會排入行事曆。<span className="ml-auto font-medium text-pine underline">前往設定 →</span>
@@ -142,7 +143,7 @@ export default function Overview() {
         </motion.section>
 
         {/* 明日提醒 */}
-        <motion.section {...enter(4)} className={cx(tile, 'border-gold/50 bg-gold-50/60 md:col-span-6 xl:col-span-5')}>
+        {canEdit && <motion.section {...enter(4)} className={cx(tile, 'border-gold/50 bg-gold-50/60 md:col-span-6 xl:col-span-5')}>
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="eyebrow flex items-center gap-1 !text-gold-600"><BellRing className="size-3.5" />Tomorrow · {fmtDateShort(tomorrow)}</div>
@@ -168,7 +169,7 @@ export default function Overview() {
             <Button size="sm" variant="gold" onClick={() => navigate('/reminder', { date: tomorrow })}>前往提醒中心</Button>
             <Button size="sm" variant="ghost" icon={<Copy className="size-3.5" />} onClick={copyTomorrow}>複製總整理</Button>
           </div>
-        </motion.section>
+        </motion.section>}
 
         {/* 近期排程 */}
         <motion.section {...enter(5)} className={cx(tile, 'md:col-span-6 xl:col-span-7 xl:row-span-2')}>
@@ -177,7 +178,7 @@ export default function Overview() {
             <Button size="sm" variant="ghost" onClick={() => navigate('/schedule', { view: 'list' })}>全部排程 →</Button>
           </div>
           {ov.upcoming.length === 0 ? (
-            <Empty title="尚無近期排程" icon={<CalendarDays className="size-6" />} action={<Button size="sm" variant="primary" onClick={() => ui.openNew()}>新增演出</Button>}>建立第一筆排程後，這裡會顯示接下來的演出。</Empty>
+            <Empty title="尚無近期排程" icon={<CalendarDays className="size-6" />} action={canEdit ? <Button size="sm" variant="primary" onClick={() => ui.openNew()}>新增演出</Button> : undefined}>建立第一筆排程後，這裡會顯示接下來的演出。</Empty>
           ) : (
             <ul className="space-y-2">
               {ov.upcoming.slice(0, 6).map((s) => (
@@ -196,7 +197,7 @@ export default function Overview() {
           )}
         </motion.section>
         {/* 尚未核定 */}
-        <motion.section {...enter(6)} className={cx(tile, 'md:col-span-6 xl:col-span-5')}>
+        {canEdit && <motion.section {...enter(6)} className={cx(tile, 'md:col-span-6 xl:col-span-5')}>
           <div className="mb-3 flex items-center justify-between">
             <div><div className="eyebrow">Verification</div><h2 className="mt-1 text-[16px] font-semibold">尚未核定的演出紀錄</h2></div>
             <Badge tone={pendingVerify.length ? 'warn' : 'ok'}>{pendingVerify.length} 場</Badge>
@@ -217,7 +218,7 @@ export default function Overview() {
             </ul>
           )}
           {pendingVerify.length > 5 && <Button size="sm" variant="ghost" className="mt-2" onClick={() => navigate('/verify')}>查看全部 {pendingVerify.length} 場 →</Button>}
-        </motion.section>
+        </motion.section>}
 
       </div>
     </div>

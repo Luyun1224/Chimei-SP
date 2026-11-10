@@ -112,17 +112,22 @@ export function rememberLogin(_email: string) {
   void _email;
 }
 
-/** 以權杖呼叫資料 API，回傳 JSON 字串 */
+/** 由專屬網址開啟時，先完成綁定再載入資料（避免先看到公開檢視） */
+export async function ensurePaired(): Promise<void> {
+  const pending = takePendingCode();
+  if (pending) await pairDevice(pending).catch(() => {});
+}
+
+/** 呼叫資料 API，回傳 JSON 字串。未綁定的裝置不帶權杖 → 伺服器回傳去識別化的公開檢視（唯讀） */
 export async function remoteCall(action: string, payload: unknown): Promise<string> {
   const s = session();
-  if (!s) throw new ApiCallError({ code: 'UNAUTHENTICATED', message: '請先以 Google 帳號登入' });
   let res: Response;
   try {
     // text/plain 為「簡單請求」，不觸發 CORS 預檢；Apps Script 回應允許跨網域讀取
-    res = await fetch(s.api, {
+    res = await fetch(s?.api || WEB_APP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ token: s.token, action, payload: JSON.stringify(payload ?? {}) }),
+      body: JSON.stringify({ token: s?.token || '', action, payload: JSON.stringify(payload ?? {}) }),
       redirect: 'follow',
     });
   } catch {
@@ -130,11 +135,12 @@ export async function remoteCall(action: string, payload: unknown): Promise<stri
   }
   const text = await res.text();
   if (!text.trim().startsWith('{')) {
-    throw new ApiCallError({ code: 'NOT_CONFIGURED', message: '資料 API 回應異常：請確認 API_URL 部署的「執行身分」為「我」、存取權為「任何人」' });
+    throw new ApiCallError({ code: 'NOT_CONFIGURED', message: '系統回應異常：請確認 Apps Script 部署的「執行身分」為「我」、存取權為「任何人」，並已發佈新版本' });
   }
-  if (/"code"\s*:\s*"UNAUTHENTICATED"/.test(text)) signOut();
+  // 綁定已失效（例如已更換專屬網址）→ 清除本機綁定
+  if (/"tokenInvalid"\s*:\s*true/.test(text)) signOut();
   // 伺服器換發的新權杖（自動續期）
   const renew = /"renewToken"\s*:\s*"([\w.-]+)"/.exec(text)?.[1];
-  if (renew) localStorage.setItem(KEY, JSON.stringify({ ...s, token: renew }));
+  if (renew && s) localStorage.setItem(KEY, JSON.stringify({ ...s, token: renew }));
   return text;
 }

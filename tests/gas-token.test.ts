@@ -57,7 +57,8 @@ describe('裝置綁定（存取碼）', () => {
     expect(post({ token, action: 'bootstrap' }).error.code).toBe('NOT_CONFIGURED');
     // 更換存取碼 → 立即失效
     props.ACCESS_CODE = 'ZZZZ-9999';
-    expect(post({ token, action: 'bootstrap' }).error.code).toBe('UNAUTHENTICATED');
+    expect(post({ token, action: 'bootstrap' }).tokenInvalid).toBe(true);
+    expect(post({ token, action: 'sp.save' }).error.code).toBe('FORBIDDEN');
     for (let i = 0; i < 10; i++) post({ action: 'auth.pair', code: 'nope' });
     expect(post({ action: 'auth.pair', code: 'ZZZZ-9999' }).error.message).toContain('次數過多');
   });
@@ -71,15 +72,16 @@ describe('登入權杖', () => {
     // 有效權杖：通過身分驗證，進入業務邏輯（測試環境沒有試算表 → NOT_CONFIGURED，表示已通過權限檢查）
     expect(post({ token, action: 'bootstrap', payload: '{}' }).error.code).toBe('NOT_CONFIGURED');
     // 竄改
-    expect(post({ token: token.slice(0, -2) + 'xx', action: 'bootstrap' }).error.code).toBe('UNAUTHENTICATED');
-    expect(post({ action: 'bootstrap' }).error.code).toBe('UNAUTHENTICATED');
+    // 竄改或無權杖 → 改走公開檢視（唯讀），不會取得完整資料
+    expect(post({ token: token.slice(0, -2) + 'xx', action: 'bootstrap' }).tokenInvalid).toBe(true);
+    expect(post({ action: 'sp.save' }).error.code).toBe('FORBIDDEN');
     // 被移出管理員名單後，舊權杖立即失效
     props.ADMIN_EMAILS = 'other@x.org';
     expect(post({ token, action: 'bootstrap' }).error.code).toBe('FORBIDDEN');
     // 更換密鑰 → 所有權杖失效
     props.ADMIN_EMAILS = 'admin@x.org';
     props.TOKEN_SECRET = 'rotated';
-    expect(post({ token, action: 'bootstrap' }).error.code).toBe('UNAUTHENTICATED');
+    expect(post({ token, action: 'bootstrap' }).tokenInvalid).toBe(true);
   });
 
   it('權杖 365 天有效，剩不到 300 天時自動續期', () => {
@@ -91,7 +93,7 @@ describe('登入權杖', () => {
       const r = post({ token, action: 'bootstrap' });
       expect(r.renewToken).toBeTruthy();
       Date.now = () => real() + 366 * 86400000;
-      expect(post({ token, action: 'bootstrap' }).error.code).toBe('UNAUTHENTICATED');
+      expect(post({ token, action: 'bootstrap' }).tokenInvalid).toBe(true);
       expect(post({ token: r.renewToken, action: 'bootstrap' }).error.code).toBe('NOT_CONFIGURED'); // 續期後的權杖仍有效
     } finally {
       Date.now = real;
