@@ -1220,6 +1220,10 @@ var SPHub = (() => {
         event = cal.createEvent(ev.title, start, end, { description: ev.description, location: ev.location });
       }
       event.setTag(TAG, ev.sessionId);
+      try {
+        event.setColor(CalendarApp.EventColor.ORANGE);
+      } catch {
+      }
       event.removeAllReminders();
       if (ev.reminderMinutes !== null && ev.reminderMinutes > 0) event.addPopupReminder(Math.min(ev.reminderMinutes, 40320));
       return event.getId();

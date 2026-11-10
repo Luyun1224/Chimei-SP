@@ -43,6 +43,12 @@ export const gasCalendar: CalendarGateway = {
       event = cal.createEvent(ev.title, start, end, { description: ev.description, location: ev.location });
     }
     event.setTag(TAG, ev.sessionId);
+    // 事件顏色固定為橘色（Google 日曆「橘橙色 Tangerine」），方便一眼辨識 SP 演出
+    try {
+      event.setColor(CalendarApp.EventColor.ORANGE);
+    } catch {
+      /* 部分共用日曆不允許變更顏色時略過，不影響同步 */
+    }
     event.removeAllReminders();
     if (ev.reminderMinutes !== null && ev.reminderMinutes > 0) event.addPopupReminder(Math.min(ev.reminderMinutes, 40320));
     return event.getId();
