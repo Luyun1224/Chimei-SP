@@ -9,7 +9,7 @@
 
 > **正式系統網址**：<https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec>（限授權管理員以 Google 帳號登入）
 >
-> **GitHub Pages 入口**：<https://luyun1224.github.io/Chimei-SP/>（「進入系統」連到上方正式網址；另有 [示範版](https://luyun1224.github.io/Chimei-SP/demo/)，使用虛構資料、不連線 Google）
+> **GitHub Pages 入口**：<https://luyun1224.github.io/Chimei-SP/>（開啟後直接轉到上方正式系統網址；另有 [示範版](https://luyun1224.github.io/Chimei-SP/demo/)，使用虛構資料、不連線 Google）
 >
 > 部署步驟請見 **[docs/DEPLOY.md](docs/DEPLOY.md)**。
 
