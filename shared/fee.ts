@@ -44,16 +44,28 @@ export interface FeeLine {
   end: string;
   minutes: number;
   fee: number;
+  /** 預定演出分鐘與其金額（核定版用來比較差異） */
+  plannedMinutes: number;
+  plannedFee: number;
   basis: FeeBasis;
 }
 
-/** 單筆明細的演出費；缺席、取消、刪除回傳 null（不列入） */
-export function feeLine(a: Assignment, s: Session | undefined, spName: string, rule: FeeRule): FeeLine | null {
+/**
+ * 單筆明細的演出費；缺席、取消、刪除回傳 null（不列入）
+ * mode：
+ *  - auto：已核定用核定時數，未核定用預定時間（預估）
+ *  - estimate：預估請領版，一律依「預定演出時間」
+ *  - final：核定請領版，只列「已出席且已核定」者，依核定實際時數
+ */
+export function feeLine(a: Assignment, s: Session | undefined, spName: string, rule: FeeRule, mode: 'auto' | 'estimate' | 'final' = 'auto'): FeeLine | null {
   if (!s || s.isDeleted || s.status === 'cancelled' || a.isDeleted) return null;
   if (a.attendance === 'absent' || a.attendance === 'cancelled') return null;
   const verified = isCountable(a, s);
   if (a.verifyStatus === 'verified' && !verified) return null;
-  const minutes = verified ? (a.approvedMinutes as number) : Math.max(0, diffMinutes(s.startTime, s.endTime));
+  if (mode === 'final' && !verified) return null;
+  const planned = Math.max(0, diffMinutes(s.startTime, s.endTime));
+  const useActual = mode === 'final' || (mode === 'auto' && verified);
+  const minutes = useActual ? (a.approvedMinutes as number) : planned;
   return {
     assignmentId: a.assignmentId,
     sessionId: s.sessionId,
@@ -63,11 +75,13 @@ export function feeLine(a: Assignment, s: Session | undefined, spName: string, r
     unit: s.unit,
     topic: topicOf(a, s),
     location: s.location,
-    start: verified && a.actualStart ? a.actualStart : s.startTime,
-    end: verified && a.actualEnd ? a.actualEnd : s.endTime,
+    start: useActual && a.actualStart ? a.actualStart : s.startTime,
+    end: useActual && a.actualEnd ? a.actualEnd : s.endTime,
     minutes,
+    plannedMinutes: planned,
+    plannedFee: feeFor(planned, rule),
     fee: feeFor(minutes, rule),
-    basis: verified ? 'verified' : 'estimated',
+    basis: useActual ? 'verified' : 'estimated',
   };
 }
 
