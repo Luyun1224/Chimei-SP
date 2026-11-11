@@ -127,6 +127,9 @@ export const SETTING_LABELS: Record<keyof Settings, string> = {
   topics: '常用教案主題',
   locations: '常用演出地點',
   inactiveThresholdDays: '長期未排演出門檻天數',
+  feeHourly: '演出費（每小時）',
+  feeHalf: '演出費（未滿 1 小時超過門檻加計）',
+  feeThresholdMinutes: '演出費加計門檻（分鐘）',
 };
 
 export interface RowTypes {

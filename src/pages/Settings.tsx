@@ -51,7 +51,7 @@ export default function Settings() {
 
   return (
     <div>
-      <PageHeader no="07" en="Settings" title="系統設定" desc="Calendar、常用選項與資料維護。管理員帳號白名單與試算表 ID 存放於 Apps Script 的 Script Properties，不在前端顯示或修改。" />
+      <PageHeader no="08" en="Settings" title="系統設定" desc="Calendar、常用選項與資料維護。管理員帳號白名單與試算表 ID 存放於 Apps Script 的 Script Properties，不在前端顯示或修改。" />
       <Card className="mb-4">
         <CardHead eyebrow="Web App" title={<span className="flex items-center gap-2"><Link2 className="size-5 text-pine" />正式系統網址</span>} />
         <div className="flex flex-wrap items-center gap-2">
@@ -116,6 +116,15 @@ export default function Settings() {
             <OptionList label="申請單位" items={form.units} onChange={(units) => setForm({ ...form, units })} />
             <OptionList label="教案主題" items={form.topics} onChange={(topics) => setForm({ ...form, topics })} />
             <OptionList label="演出地點" items={form.locations} onChange={(locations) => setForm({ ...form, locations })} />
+            <div className="rounded-[14px] bg-mist/60 p-3">
+              <div className="mb-2 text-[13px] font-medium text-ink-2">演出費計算</div>
+              <div className="grid grid-cols-3 gap-2">
+                <Field label="每小時（元）"><input type="number" min={0} className="field num" value={form.feeHourly ?? 500} onChange={(e) => setForm({ ...form, feeHourly: Number(e.target.value) })} /></Field>
+                <Field label="超過門檻加計（元）"><input type="number" min={0} className="field num" value={form.feeHalf ?? 250} onChange={(e) => setForm({ ...form, feeHalf: Number(e.target.value) })} /></Field>
+                <Field label="門檻（分鐘）"><input type="number" min={0} max={59} className="field num" value={form.feeThresholdMinutes ?? 15} onChange={(e) => setForm({ ...form, feeThresholdMinutes: Number(e.target.value) })} /></Field>
+              </div>
+              <p className="mt-1 text-[12px] text-ink-3">每滿 1 小時計每小時金額；未滿 1 小時的部分超過門檻分鐘數，加計一次。</p>
+            </div>
             <Field label="長期未安排演出門檻（天）"><input type="number" min={7} max={730} className="field num w-32" value={form.inactiveThresholdDays} onChange={(e) => setForm({ ...form, inactiveThresholdDays: Number(e.target.value) })} /></Field>
           </div>
         </Card>

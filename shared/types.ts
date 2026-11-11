@@ -136,6 +136,12 @@ export interface Settings {
   topics: string[];
   locations: string[];
   inactiveThresholdDays: number;
+  /** 演出費：每滿 1 小時金額 */
+  feeHourly: number;
+  /** 演出費：未滿 1 小時的部分超過門檻分鐘時加計的金額 */
+  feeHalf: number;
+  /** 演出費：加計門檻（分鐘），超過此分鐘數才加計 feeHalf */
+  feeThresholdMinutes: number;
 }
 
 export interface CurrentUser {

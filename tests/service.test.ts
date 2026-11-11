@@ -387,3 +387,19 @@ describe('權限', () => {
     expect(r3.ok).toBe(false);
   });
 });
+
+describe('演出費計算', () => {
+  it('每滿 1 小時 500；未滿 1 小時超過 15 分加 250', async () => {
+    const { feeFor, feeRule } = await import('../shared/fee');
+    const r = feeRule({});
+    expect(feeFor(60, r)).toBe(500);
+    expect(feeFor(75, r)).toBe(500);
+    expect(feeFor(76, r)).toBe(750);
+    expect(feeFor(150, r)).toBe(1250);
+    expect(feeFor(170, r)).toBe(1250);
+    expect(feeFor(14, r)).toBe(0);
+    expect(feeFor(30, r)).toBe(250);
+    expect(feeFor(270, r)).toBe(2250);
+    expect(feeFor(90, feeRule({ feeHourly: 600, feeHalf: 300, feeThresholdMinutes: 0 }))).toBe(900);
+  });
+});

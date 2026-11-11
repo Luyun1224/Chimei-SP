@@ -28,6 +28,9 @@ export const DEFAULT_SETTINGS: Settings = {
   topics: [],
   locations: [],
   inactiveThresholdDays: 90,
+  feeHourly: 500,
+  feeHalf: 250,
+  feeThresholdMinutes: 15,
 };
 
 export const PLACEHOLDERS = [

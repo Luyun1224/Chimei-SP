@@ -67,7 +67,7 @@ export default function Analytics({ route }: { route: Route }) {
   return (
     <div>
       <PageHeader
-        no="06"
+        no="07"
         en="Analytics"
         title="年度成果分析"
         desc="所有成果數字只採計「已完成」且「已核定出席」的紀錄。場次＝至少一位 SP 核定出席的演出；人次＝SP 出席筆數；人時＝核定時數加總；SP 人數＝不重複 SP。"

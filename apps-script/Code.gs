@@ -349,7 +349,10 @@ var SPHub = (() => {
     units: [],
     topics: [],
     locations: [],
-    inactiveThresholdDays: 90
+    inactiveThresholdDays: 90,
+    feeHourly: 500,
+    feeHalf: 250,
+    feeThresholdMinutes: 15
   };
   function sessionFingerprint(s2, a) {
     const src = [s2.date, s2.checkinTime, s2.startTime, s2.endTime, s2.location, (a == null ? void 0 : a.topic) || s2.topic, s2.status, s2.isDeleted ? "D" : "", (a == null ? void 0 : a.attendance) === "cancelled" || (a == null ? void 0 : a.isDeleted) ? "X" : ""].join("|");
@@ -1177,7 +1180,10 @@ var SPHub = (() => {
     units: "常用申請單位",
     topics: "常用教案主題",
     locations: "常用演出地點",
-    inactiveThresholdDays: "長期未排演出門檻天數"
+    inactiveThresholdDays: "長期未排演出門檻天數",
+    feeHourly: "演出費（每小時）",
+    feeHalf: "演出費（未滿 1 小時超過門檻加計）",
+    feeThresholdMinutes: "演出費加計門檻（分鐘）"
   };
   var BOOL_TRUE = ["TRUE", "true", "是", "Y", "1"];
   function colIndex(header, c) {

@@ -17,6 +17,7 @@ import Verification from './pages/Verification';
 import Analytics from './pages/Analytics';
 import Report from './pages/Report';
 import Settings from './pages/Settings';
+import Fees from './pages/Fees';
 
 function Pages() {
   const route = useRoute();
@@ -50,6 +51,7 @@ function Pages() {
       case 'verify': return <Verification route={route} />;
       case 'analytics': return <Analytics route={route} />;
       case 'report': return <Report route={route} />;
+      case 'fees': return <Fees />;
       case 'settings': return <Settings />;
       default: return <Overview />;
     }

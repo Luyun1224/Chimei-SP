@@ -6,6 +6,7 @@ import { AppError, validateSessionInput } from '../../shared/validate';
 import { addDays, diffMinutes, fmtDate, fmtDateShort, fmtDuration, toMinutes } from '../../shared/time';
 import { notifyState } from '../../shared/template';
 import { topicOf } from '../../shared/stats';
+import { feeLine, feeRule, fmtMoney, type FeeLine } from '../../shared/fee';
 import { API_VERSION } from '../../shared/version';
 import { useCanEdit, useData, spName } from '../lib/store';
 import { ApiCallError, call, newRequestId } from '../lib/api';
@@ -414,6 +415,10 @@ function SessionDetailDrawer({ id, onClose, onEdit, onCopy }: { id: string | nul
                         </button>
                         <Badge tone={ATTENDANCE[a.attendance].tone}>{ATTENDANCE[a.attendance].label}</Badge>
                         {a.verifyStatus === 'verified' ? <Badge tone="sage">已核定 {fmtDuration(a.approvedMinutes || 0)}</Badge> : s.status === 'completed' && <Badge tone="warn">待核定</Badge>}
+                        {canEdit && (() => {
+                          const f = feeLine(a, s, '', feeRule(snap.settings));
+                          return f ? <span className="num text-[13px] text-ink-2">演出費 <b className="text-ink">{fmtMoney(f.fee)}</b> 元{f.basis === 'estimated' && <span className="text-[11px] text-warn">（預估）</span>}</span> : null;
+                        })()}
                         <span className="ml-auto"><NotifyBadge state={notifyState(d.latestNotify.get(a.assignmentId), s, a)} /></span>
                       </li>
                     ))}
@@ -421,6 +426,20 @@ function SessionDetailDrawer({ id, onClose, onEdit, onCopy }: { id: string | nul
                 </div>
               ))}
             </div>
+            {canEdit && (() => {
+              const fees = list.map((a) => feeLine(a, s, '', feeRule(snap.settings))).filter(Boolean) as FeeLine[];
+              if (!fees.length) return null;
+              const total = fees.reduce((n, f) => n + f.fee, 0);
+              const est = fees.some((f) => f.basis === 'estimated');
+              return (
+                <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[14px] bg-gold-50 px-4 py-3 text-[14px] ring-1 ring-gold/40">
+                  <span className="text-ink-2">本場演出費合計</span>
+                  <b className="num text-[18px] text-ink">{fmtMoney(total)}</b> 元
+                  {est && <span className="text-[12px] text-warn">（含預估，核定後依實際時數）</span>}
+                  <Button size="sm" variant="ghost" className="ml-auto" onClick={() => { onClose(); navigate('/fees'); }}>查看費用明細 →</Button>
+                </div>
+              );
+            })()}
             {s.status === 'completed' && canEdit && (
               <Button size="sm" variant="ghost" className="mt-2" onClick={() => { onClose(); navigate('/verify', { session: s.sessionId }); }}>
                 前往核定時數 →
