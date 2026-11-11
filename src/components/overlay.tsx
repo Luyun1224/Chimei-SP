@@ -45,24 +45,25 @@ function useFocusTrap(open: boolean, onClose: () => void) {
 }
 
 // ---------------- Drawer ----------------
+/** 編輯面板：置中顯示（手機為全螢幕），避免視線一直移到畫面右側 */
 export function Drawer({ open, onClose, title, eyebrow, children, footer, width = 560 }: { open: boolean; onClose: () => void; title: ReactNode; eyebrow?: string; children: ReactNode; footer?: ReactNode; width?: number }) {
   const ref = useFocusTrap(open, onClose);
   const reduce = useReducedMotion();
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-40 flex justify-end">
+        <div className="fixed inset-0 z-40 flex items-stretch justify-center sm:items-center sm:p-6">
           <motion.div className="absolute inset-0 bg-ink/30 backdrop-blur-[2px]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
           <motion.div
             ref={ref}
             role="dialog"
             aria-modal="true"
             aria-label={typeof title === 'string' ? title : undefined}
-            className="relative flex h-full w-full flex-col bg-cream shadow-2xl sm:rounded-l-[28px]"
-            style={{ maxWidth: width }}
-            initial={reduce ? { opacity: 0 } : { x: 60, opacity: 0 }}
-            animate={reduce ? { opacity: 1 } : { x: 0, opacity: 1 }}
-            exit={reduce ? { opacity: 0 } : { x: 60, opacity: 0 }}
+            className="relative flex h-full w-full flex-col bg-cream shadow-2xl sm:h-auto sm:max-h-[92vh] sm:rounded-[28px]"
+            style={{ maxWidth: Math.max(width, 640) }}
+            initial={reduce ? { opacity: 0 } : { y: 24, scale: 0.98, opacity: 0 }}
+            animate={reduce ? { opacity: 1 } : { y: 0, scale: 1, opacity: 1 }}
+            exit={reduce ? { opacity: 0 } : { y: 16, scale: 0.98, opacity: 0 }}
             transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
           >
             <div className="flex items-start justify-between gap-3 border-b border-line px-6 pb-4 pt-6">
@@ -75,7 +76,7 @@ export function Drawer({ open, onClose, title, eyebrow, children, footer, width 
               </IconButton>
             </div>
             <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
-            {footer && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line bg-white/60 px-6 py-4">{footer}</div>}
+            {footer && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line bg-white/60 px-6 py-4 sm:rounded-b-[28px]">{footer}</div>}
           </motion.div>
         </div>
       )}
