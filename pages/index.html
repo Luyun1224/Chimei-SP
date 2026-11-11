@@ -2,24 +2,29 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SP Performance Hub｜奇美醫院臨床技能中心</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>SP 行事曆｜SP Performance Hub</title>
   <meta name="robots" content="noindex" />
   <meta name="theme-color" content="#284A45" />
-  <meta name="apple-mobile-web-app-title" content="SP Hub" />
-  <!-- GitHub 網址 → 直接開啟正式系統（Apps Script 網頁應用程式） -->
-  <meta http-equiv="refresh" content="0; url=https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec" />
-  <script>
-    window.location.replace('https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec');
-  </script>
-  <style>
-    body { margin:0; min-height:100vh; display:grid; place-items:center; background:#F7F4ED; color:#284A45;
-      font-family:system-ui,"Noto Sans TC","Microsoft JhengHei",sans-serif; text-align:center; }
-    a { color:#284A45; font-weight:600; }
-  </style>
+  <!-- 桌面捷徑／加入主畫面：大行事曆本圖示（不設定 start_url，捷徑會保留目前網址含 ?k= 專屬存取碼） -->
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="SP 行事曆" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://script.google.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <link rel="stylesheet" href="./app/app.css" />
+  <style>#boot{font-family:system-ui,"Noto Sans TC",sans-serif;color:#284A45;display:grid;place-items:center;min-height:90vh}</style>
 </head>
-<body>
-  <p>正在開啟 SP Performance Hub…<br /><br />
-    若沒有自動開啟，請點這裡：<a href="https://script.google.com/macros/s/AKfycbwqQfItOrF_RrMd4jcw3aEDnl7C0rNk_4gPvgW0SJ1_uSbei12P48IZRWdv3BveTsch/exec">開啟系統</a></p>
+<body style="margin:0;background:#F7F4ED">
+  <!-- 正式系統直接在本網址執行；資料讀寫在 Apps Script（執行身分：我／存取權：任何人）完成 -->
+  <script>window.SP_HUB_DIRECT = true;</script>
+  <div id="root"><div id="boot">SP Performance Hub 載入中…</div></div>
+  <script src="./app/app.js"></script>
 </body>
 </html>

@@ -37,21 +37,20 @@ function captureFromHash(): void {
 }
 captureFromHash();
 
-/** 專屬網址：https://…/Chimei-SP/#k=存取碼 → 開啟即自動綁定，不需輸入 */
-const PENDING = 'sp-hub-pending-code';
-(function captureKey() {
+/**
+ * 專屬網址：https://…/Chimei-SP/?k=存取碼
+ * 存取碼保留在網址上（不清除），所以「加入主畫面／桌面捷徑」與無痕視窗開啟時都會自動綁定，網址維持 GitHub。
+ * 舊格式 #k= 會自動轉成 ?k=。
+ */
+(function normalizeKey() {
   if (typeof window === 'undefined') return;
   const m = /^#k=([A-Za-z0-9-]+)/.exec(window.location.hash);
-  if (!m) return;
-  sessionStorage.setItem(PENDING, m[1]);
-  history.replaceState(null, '', window.location.pathname + window.location.search + '#/overview');
+  if (m) window.location.replace(`${window.location.pathname}?k=${m[1]}#/overview`);
 })();
 export function takePendingCode(): string {
-  const c = sessionStorage.getItem(PENDING) || '';
-  sessionStorage.removeItem(PENDING);
-  return c;
+  return new URLSearchParams(window.location.search).get('k') || '';
 }
-export const personalLink = (code: string) => `https://luyun1224.github.io/Chimei-SP/#k=${code}`;
+export const personalLink = (code: string) => `https://luyun1224.github.io/Chimei-SP/?k=${code}`;
 
 function session(): Sess | null {
   try {
@@ -114,12 +113,12 @@ export function rememberLogin(_email: string) {
 
 /** 由專屬網址開啟時，先完成綁定再載入資料（避免先看到公開檢視） */
 export async function ensurePaired(): Promise<void> {
-  const pending = takePendingCode();
-  if (pending) await pairDevice(pending).catch(() => {});
+  const code = takePendingCode();
+  if (code && !hasToken()) await pairDevice(code).catch(() => {});
 }
 
 /** 呼叫資料 API，回傳 JSON 字串。未綁定的裝置不帶權杖 → 伺服器回傳去識別化的公開檢視（唯讀） */
-export async function remoteCall(action: string, payload: unknown): Promise<string> {
+export async function remoteCall(action: string, payload: unknown, retried = false): Promise<string> {
   const s = session();
   let res: Response;
   try {
@@ -138,7 +137,15 @@ export async function remoteCall(action: string, payload: unknown): Promise<stri
     throw new ApiCallError({ code: 'NOT_CONFIGURED', message: '系統回應異常：請確認 Apps Script 部署的「執行身分」為「我」、存取權為「任何人」，並已發佈新版本' });
   }
   // 綁定已失效（例如已更換專屬網址）→ 清除本機綁定
-  if (/"tokenInvalid"\s*:\s*true/.test(text)) signOut();
+  if (/"tokenInvalid"\s*:\s*true/.test(text)) {
+    signOut();
+    // 網址上有存取碼（例如綁定過期）→ 立即重新綁定後重試一次
+    const code = takePendingCode();
+    if (code && s && !retried) {
+      await pairDevice(code).catch(() => {});
+      if (hasToken()) return remoteCall(action, payload, true);
+    }
+  }
   // 伺服器換發的新權杖（自動續期）
   const renew = /"renewToken"\s*:\s*"([\w.-]+)"/.exec(text)?.[1];
   if (renew && s) localStorage.setItem(KEY, JSON.stringify({ ...s, token: renew }));

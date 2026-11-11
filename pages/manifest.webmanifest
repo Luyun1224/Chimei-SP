@@ -1,0 +1,14 @@
+{
+  "name": "SP Performance Hub｜標準化病人演出紀錄",
+  "short_name": "SP 行事曆",
+  "description": "奇美醫院臨床技能中心 標準化病人演出歷程管理平台",
+  "display": "standalone",
+  "background_color": "#F7F4ED",
+  "theme_color": "#284A45",
+  "lang": "zh-Hant",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

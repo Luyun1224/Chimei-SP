@@ -1627,7 +1627,7 @@ var SPHub = (() => {
     }
     Logger.log("✅ 初始化完成（%s）：%s", bound ? "使用綁定的試算表" : "使用 SPREADSHEET_ID 指定的試算表", ss.getUrl());
     Logger.log("管理員：%s", adminList().join(", ") || "（未設定，請於 Script Properties 設定 ADMIN_EMAILS）");
-    Logger.log("🔗 專屬網址（開啟即直接進入）：https://luyun1224.github.io/Chimei-SP/#k=%s", accessCode());
+    Logger.log("🔗 專屬網址（開啟即直接進入）：https://luyun1224.github.io/Chimei-SP/?k=%s", accessCode());
     return ss.getUrl();
   }
   function healthCheck() {
@@ -1784,12 +1784,12 @@ var SPHub = (() => {
   }
   function showAccessCode() {
     const c = accessCode();
-    Logger.log("🔗 專屬網址（開啟即直接進入，請勿外流）：https://luyun1224.github.io/Chimei-SP/#k=%s", c);
+    Logger.log("🔗 專屬網址（開啟即直接進入，請勿外流）：https://luyun1224.github.io/Chimei-SP/?k=%s", c);
     return c;
   }
   function rotateAccessCode() {
     const c = accessCode(true);
-    Logger.log("🔗 新的專屬網址：https://luyun1224.github.io/Chimei-SP/#k=%s（舊網址與裝置已全部失效）", c);
+    Logger.log("🔗 新的專屬網址：https://luyun1224.github.io/Chimei-SP/?k=%s（舊網址與裝置已全部失效）", c);
     return c;
   }
   function publicPost(action, out, hadToken) {

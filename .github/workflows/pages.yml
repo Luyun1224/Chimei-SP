@@ -33,6 +33,8 @@ jobs:
         run: |
           mkdir -p site/demo
           cp pages/index.html site/index.html
+          cp pages/manifest.webmanifest site/manifest.webmanifest
+          cp -r pages/icons site/icons
           cp dist/index.html site/demo/index.html
           mkdir -p site/app
           cp dist-app/app.js dist-app/app.css site/app/

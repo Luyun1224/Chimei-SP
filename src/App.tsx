@@ -2,7 +2,7 @@ import { Component, useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { Lock, RefreshCw } from 'lucide-react';
 import { DataProvider, useData } from './lib/store';
-import { isRemote, pairDevice, signOut, takePendingCode } from './lib/remote';
+import { hasToken, isRemote, pairDevice, signOut, takePendingCode } from './lib/remote';
 import { useRoute } from './lib/router';
 import { ConfirmProvider, ToastProvider } from './components/overlay';
 import { Layout } from './components/Layout';
@@ -94,7 +94,7 @@ function LoginScreen({ onDone }: { onDone: () => Promise<void> }) {
   const [auto, setAuto] = useState(false);
   // 由專屬網址開啟：自動綁定，直接進入儀表板
   useEffect(() => {
-    const pending = takePendingCode();
+    const pending = hasToken() ? '' : takePendingCode();
     if (!pending) return;
     setAuto(true);
     pairDevice(pending)
