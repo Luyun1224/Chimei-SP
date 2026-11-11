@@ -21,6 +21,11 @@ import type { ActionName, HealthReport } from '../../shared/types';
 
 const props = () => PropertiesService.getScriptProperties();
 
+/** 擁有者自行開啟：Script Properties 的 PUBLIC_ACCESS 設為 full 時，一般網址不需綁定即可完整使用（預設關閉） */
+function ownerAllowsFullPublic(): boolean {
+  return (props().getProperty('PUBLIC_ACCESS') || '').trim().toLowerCase() === 'full';
+}
+
 function adminList(): string[] {
   return (props().getProperty('ADMIN_EMAILS') || '')
     .split(/[,\s;]+/)
@@ -170,6 +175,10 @@ export function api(action: string, payloadJson: string): string {
   try {
     const email = currentEmail();
     const ss = openSpreadsheet();
+    if ((!email || !adminList().includes(email)) && ownerAllowsFullPublic()) {
+      const svc = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss, email || 'open:網址開啟'), calendar: gasCalendar });
+      return JSON.stringify(svc.dispatch(action as ActionName, payload as never));
+    }
     if (!email || !adminList().includes(email)) {
       // 公開檢視：伺服器端去識別化、唯讀
       const owner = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss, 'public@system'), calendar: gasCalendar });
@@ -400,7 +409,11 @@ export function doPost(e: GoogleAppsScript.Events.DoPost) {
   }
   if (req.action === 'auth.pair') return out(pairDevice(req as { code?: string; device?: string }));
   const email = verifyToken(req.token || '');
-  if (!email) return publicPost(String(req.action || ''), out, !!req.token);
+  if (!email) {
+    // 擁有者可在 Script Properties 設定 PUBLIC_ACCESS=full，讓一般網址直接開啟完整、可編輯的系統（預設為去識別化唯讀）
+    if (ownerAllowsFullPublic()) return handlePost(req, 'open:網址開啟', out);
+    return publicPost(String(req.action || ''), out, !!req.token);
+  }
   if (!email.startsWith(DEVICE_PREFIX) && !adminList().includes(email)) return out({ ok: false, error: { code: 'FORBIDDEN', message: `帳號 ${email} 未獲授權` } });
   // 自動續期：使用中的裝置不需重新登入
   if (tokenExpiry(req.token || '') - Date.now() < RENEW_BELOW_DAYS * 86400000) {

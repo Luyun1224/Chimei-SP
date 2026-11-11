@@ -43,6 +43,16 @@ const login = (ret = 'https://luyun1224.github.io/Chimei-SP/') => {
 const post = (body: unknown) => JSON.parse((doPost({ postData: { contents: JSON.stringify(body) } } as never) as unknown as { body: string }).body);
 const tokenFrom = (back: string) => decodeURIComponent(/sphub_token=([^&]+)/.exec(back)![1]);
 
+describe('擁有者設定 PUBLIC_ACCESS=full', () => {
+  it('預設：一般網址為唯讀公開檢視；設定 full 後可直接完整使用', () => {
+    props.PUBLIC_ACCESS = '';
+    expect(post({ action: 'sp.save', payload: '{}' }).error.code).toBe('FORBIDDEN');
+    props.PUBLIC_ACCESS = 'full';
+    // 通過權限檢查、進入業務邏輯（測試環境沒有試算表 → NOT_CONFIGURED）
+    expect(post({ action: 'sp.save', payload: '{}' }).error.code).toBe('NOT_CONFIGURED');
+  });
+});
+
 describe('裝置綁定（存取碼）', () => {
   it('正確存取碼取得長期權杖；錯誤會拒絕並在多次後鎖定；更換存取碼撤銷所有裝置', () => {
     expect(post({ action: 'auth.pair', code: 'X' }).error.code).toBe('NOT_CONFIGURED');

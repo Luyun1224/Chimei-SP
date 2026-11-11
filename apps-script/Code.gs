@@ -917,7 +917,7 @@ var SPHub = (() => {
         const email = env.user();
         if (!email) throw new AppError("UNAUTHENTICATED", "無法取得登入身分，請以 Google 帳號登入");
         const internalPublic = email === "public@system" && action === "bootstrap";
-        if (!internalPublic && !email.startsWith("device:") && !env.isAdmin(email)) throw new AppError("FORBIDDEN", `帳號 ${email} 未獲授權使用本系統，請聯絡臨床技能中心管理員`);
+        if (!internalPublic && !email.startsWith("device:") && !email.startsWith("open:") && !env.isAdmin(email)) throw new AppError("FORBIDDEN", `帳號 ${email} 未獲授權使用本系統，請聯絡臨床技能中心管理員`);
         const h = handlers[action];
         if (!h) throw new AppError("VALIDATION", `未知的操作：${String(action)}`);
         return { ok: true, data: h(payload || {}) };
@@ -1425,6 +1425,9 @@ var SPHub = (() => {
 
   // server/gas/main.ts
   var props = () => PropertiesService.getScriptProperties();
+  function ownerAllowsFullPublic() {
+    return (props().getProperty("PUBLIC_ACCESS") || "").trim().toLowerCase() === "full";
+  }
   function adminList() {
     return (props().getProperty("ADMIN_EMAILS") || "").split(/[,\s;]+/).map((s2) => s2.trim().toLowerCase()).filter(Boolean);
   }
@@ -1550,6 +1553,10 @@ var SPHub = (() => {
     try {
       const email = currentEmail();
       const ss = openSpreadsheet();
+      if ((!email || !adminList().includes(email)) && ownerAllowsFullPublic()) {
+        const svc2 = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss, email || "open:網址開啟"), calendar: gasCalendar });
+        return JSON.stringify(svc2.dispatch(action, payload));
+      }
       if (!email || !adminList().includes(email)) {
         const owner = createService({ repo: createSheetsRepo(ss), env: buildEnv(ss, "public@system"), calendar: gasCalendar });
         return JSON.stringify(publicDispatch(action, () => owner.dispatch("bootstrap", {})));
@@ -1745,7 +1752,10 @@ var SPHub = (() => {
     }
     if (req.action === "auth.pair") return out(pairDevice(req));
     const email = verifyToken(req.token || "");
-    if (!email) return publicPost(String(req.action || ""), out, !!req.token);
+    if (!email) {
+      if (ownerAllowsFullPublic()) return handlePost(req, "open:網址開啟", out);
+      return publicPost(String(req.action || ""), out, !!req.token);
+    }
     if (!email.startsWith(DEVICE_PREFIX) && !adminList().includes(email)) return out({ ok: false, error: { code: "FORBIDDEN", message: `帳號 ${email} 未獲授權` } });
     if (tokenExpiry(req.token || "") - Date.now() < RENEW_BELOW_DAYS * 864e5) {
       const renewToken = issueToken(email);

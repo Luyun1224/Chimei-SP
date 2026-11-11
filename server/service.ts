@@ -551,7 +551,7 @@ export function createService({ repo, env, calendar }: Deps) {
       if (!email) throw new AppError('UNAUTHENTICATED', '無法取得登入身分，請以 Google 帳號登入');
       // public@system：公開檢視的內部讀取，結果會經 publicSnapshot 去識別化，且只允許 bootstrap
       const internalPublic = email === 'public@system' && action === 'bootstrap';
-      if (!internalPublic && !email.startsWith('device:') && !env.isAdmin(email)) throw new AppError('FORBIDDEN', `帳號 ${email} 未獲授權使用本系統，請聯絡臨床技能中心管理員`);
+      if (!internalPublic && !email.startsWith('device:') && !email.startsWith('open:') && !env.isAdmin(email)) throw new AppError('FORBIDDEN', `帳號 ${email} 未獲授權使用本系統，請聯絡臨床技能中心管理員`);
       const h = handlers[action] as Handler<A> | undefined;
       if (!h) throw new AppError('VALIDATION', `未知的操作：${String(action)}`);
       return { ok: true, data: h(payload || ({} as ApiActions[A]['req'])) };
