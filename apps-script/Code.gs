@@ -79,6 +79,11 @@ var SPHub = (() => {
     return `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}（${weekdayLabel(date)}）`;
   }
 
+  // shared/seeking.ts
+  function formatSeeking(list) {
+    return list.filter((x) => x.topic && x.need > 0).map((x) => `${x.topic}×${x.need}`).join("、");
+  }
+
   // shared/validate.ts
   var AppError = class extends Error {
     constructor(code, message, details) {
@@ -151,7 +156,8 @@ var SPHub = (() => {
     const cases = rawCases.map((c) => ({
       topic: clean(c.topic, MAX.text),
       spIds: uniq((Array.isArray(c.spIds) ? c.spIds : []).map((x) => clean(x, 40)).filter(Boolean)),
-      newSpNames: uniq((Array.isArray(c.newSpNames) ? c.newSpNames : []).map((x) => clean(x, MAX.name)).filter(Boolean))
+      newSpNames: uniq((Array.isArray(c.newSpNames) ? c.newSpNames : []).map((x) => clean(x, MAX.name)).filter(Boolean)),
+      seeking: Math.max(0, Math.min(50, Math.floor(Number(c.seeking) || 0)))
     }));
     const v = {
       date: clean(raw.date, 10),
@@ -163,7 +169,8 @@ var SPHub = (() => {
       location: clean(raw.location, MAX.text),
       note: clean(raw.note, MAX.note),
       cases,
-      spIds: uniq(cases.flatMap((c) => c.spIds))
+      spIds: uniq(cases.flatMap((c) => c.spIds)),
+      seeking: formatSeeking(cases.map((c) => ({ topic: c.topic, need: c.seeking })))
     };
     const e = {};
     if (!isValidDate(v.date)) e.date = "請選擇正確的演出日期";
@@ -181,7 +188,7 @@ var SPHub = (() => {
       if (!c.topic) e[`case${i}.topic`] = "請輸入教案主題";
       else if (seen.has(c.topic)) e[`case${i}.topic`] = "同一場次的教案主題重複，請合併為同一列";
       seen.add(c.topic);
-      if (!c.spIds.length && !c.newSpNames.length) e[`case${i}.sps`] = "請至少選擇或輸入一位 SP";
+      if (!c.spIds.length && !c.newSpNames.length && !c.seeking) e[`case${i}.sps`] = "請選擇或輸入 SP，或勾選「SP 尋找中」";
       if (c.spIds.length + c.newSpNames.length > 50) e[`case${i}.sps`] = "單一教案 SP 人數過多";
     });
     if (e["case0.topic"] && cases.length === 1) e.topic = e["case0.topic"];
@@ -322,7 +329,7 @@ var SPHub = (() => {
   }
 
   // shared/version.ts
-  var API_VERSION = 5;
+  var API_VERSION = 6;
 
   // shared/template.ts
   var DEFAULT_INDIVIDUAL_TEMPLATE = `{SP姓名} 您好，提醒您{相對日}有標準化病人（SP）演出安排：
@@ -458,6 +465,7 @@ var SPHub = (() => {
           `演出地點：${s2.location}`,
           `教案與 SP（共 ${live.length} 人次）：`,
           ...caseLines.length ? caseLines : ["（未指派）"],
+          s2.seeking ? `SP 尋找中：${s2.seeking}` : "",
           s2.note ? `備註：${s2.note}` : "",
           "",
           `系統排程 ID：${s2.sessionId}`,
@@ -626,7 +634,7 @@ var SPHub = (() => {
             updatedBy: actor,
             version: 1
           });
-          const fields = { date: v.date, unit: v.unit, topic: v.topic, checkinTime: v.checkinTime, startTime: v.startTime, endTime: v.endTime, location: v.location, note: v.note };
+          const fields = { date: v.date, unit: v.unit, topic: v.topic, checkinTime: v.checkinTime, startTime: v.startTime, endTime: v.endTime, location: v.location, note: v.note, seeking: v.seeking };
           const auditCases = v.cases.map((c) => ({ topic: c.topic, sps: pairs.filter((p) => p.topic === c.topic).map((p) => {
             var _a;
             return (_a = spMap.get(p.spId)) == null ? void 0 : _a.name;
@@ -1094,6 +1102,7 @@ var SPHub = (() => {
         s("endTime", "演出結束"),
         s("location", "演出地點"),
         s("note", "備註"),
+        s("seeking", "SP尋找中"),
         s("status", "排程狀態", ENUMS.sessionStatus),
         s("cancelReason", "取消原因"),
         s("calendarEventId", "日曆事件ID"),
@@ -1253,6 +1262,11 @@ var SPHub = (() => {
       const sheet = sheetOf(def.sheet, def.legacySheet);
       const values = sheet.getDataRange().getValues();
       const header = (values[0] || []).map(String);
+      const missing = def.columns.filter((c) => !c.compute && colIndex(header, c) < 0).map((c) => c.label);
+      if (missing.length && header.length) {
+        sheet.getRange(1, header.length + 1, 1, missing.length).setValues([missing]);
+        header.push(...missing);
+      }
       const idCol = def.columns.find((c) => c.key === def.idKey);
       const idIdx = colIndex(header, idCol);
       if (idIdx < 0) throw new AppError("NOT_CONFIGURED", `工作表「${def.sheet}」缺少主鍵欄位 ${def.idKey}`);

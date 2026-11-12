@@ -126,6 +126,7 @@ export function createService({ repo, env, calendar }: Deps) {
         `演出地點：${s.location}`,
         `教案與 SP（共 ${live.length} 人次）：`,
         ...(caseLines.length ? caseLines : ['（未指派）']),
+        s.seeking ? `SP 尋找中：${s.seeking}` : '',
         s.note ? `備註：${s.note}` : '',
         '',
         `系統排程 ID：${s.sessionId}`,
@@ -274,7 +275,7 @@ export function createService({ repo, env, calendar }: Deps) {
           approvedMinutes: null, minutesNote: '', verifyStatus: 'unverified', verifiedBy: '', verifiedAt: '', isDeleted: false,
           createdAt: now, updatedAt: now, updatedBy: actor, version: 1,
         });
-        const fields = { date: v.date, unit: v.unit, topic: v.topic, checkinTime: v.checkinTime, startTime: v.startTime, endTime: v.endTime, location: v.location, note: v.note };
+        const fields = { date: v.date, unit: v.unit, topic: v.topic, checkinTime: v.checkinTime, startTime: v.startTime, endTime: v.endTime, location: v.location, note: v.note, seeking: v.seeking };
         const auditCases = v.cases.map((c) => ({ topic: c.topic, sps: pairs.filter((p) => p.topic === c.topic).map((p) => spMap.get(p.spId)?.name) }));
         const initialSync = calendarOn ? 'pending' : 'disabled';
 

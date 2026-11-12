@@ -403,3 +403,27 @@ describe('演出費計算', () => {
     expect(feeFor(90, feeRule({ feeHourly: 600, feeHalf: 300, feeThresholdMinutes: 0 }))).toBe(900);
   });
 });
+
+describe('SP 尋找中', () => {
+  it('教案可只標記尋找中（尚無 SP）；之後編輯加入 SP 並清除尋找中', () => {
+    const r = ok(svc.dispatch('session.save', { input: { ...input([]), cases: [
+      { topic: '氣切', spIds: [], seeking: 1 },
+      { topic: '心導管', spIds: [], newSpNames: ['陳英斌'], seeking: 1 },
+    ] }, requestId: 'sk-1' }));
+    const s = r.sessions![0];
+    expect(s.seeking).toBe('氣切×1、心導管×1');
+    expect(s.topic).toBe('氣切、心導管');
+    expect(state.tables.assignments).toHaveLength(1);
+    expect(cal.events[0].description).toContain('SP 尋找中：氣切×1、心導管×1');
+    // 沒有 SP 也沒勾尋找中 → 驗證錯誤
+    expect(svc.dispatch('session.save', { input: { ...input([]), cases: [{ topic: 'X', spIds: [] }] }, requestId: 'sk-2' }).ok).toBe(false);
+    // 找到 SP 後編輯
+    const ids = Object.fromEntries(state.tables.sps.map((p) => [p.name, p.spId]));
+    const r2 = ok(svc.dispatch('session.save', { sessionId: s.sessionId, expectedVersion: s.version, requestId: 'sk-3', input: { ...input([]), cases: [
+      { topic: '氣切', spIds: [], newSpNames: ['郭志鴻'] },
+      { topic: '心導管', spIds: [ids['陳英斌']] },
+    ] } }));
+    expect(r2.sessions![0].seeking).toBe('');
+    expect(state.tables.assignments.filter((a) => !a.isDeleted)).toHaveLength(2);
+  });
+});

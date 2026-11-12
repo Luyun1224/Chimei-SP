@@ -72,6 +72,7 @@ export const TABLES = {
     columns: [
       s('sessionId', '排程編號'), s('date', '演出日期'), s('unit', '申請單位'), s('topic', '教案主題'),
       s('checkinTime', '報到時間'), s('startTime', '演出開始'), s('endTime', '演出結束'), s('location', '演出地點'), s('note', '備註'),
+      s('seeking', 'SP尋找中'),
       s('status', '排程狀態', ENUMS.sessionStatus), s('cancelReason', '取消原因'),
       s('calendarEventId', '日曆事件ID'), s('syncStatus', '日曆同步狀態', ENUMS.syncStatus), s('syncError', '同步錯誤訊息'), s('syncedAt', '同步時間'),
       { key: 'isDeleted', type: 'bool', label: '已刪除' }, s('deleteReason', '刪除原因'), s('requestId', '請求編號'),

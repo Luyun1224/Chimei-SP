@@ -62,6 +62,8 @@ export interface Session {
   syncedAt: string;
   isDeleted: boolean;
   deleteReason: string;
+  /** 尚在尋找中的 SP：「教案×還缺人數」，以「、」分隔；空白表示 SP 已全部排定 */
+  seeking?: string;
   requestId: string;
   createdAt: string;
   createdBy: string;
@@ -191,6 +193,8 @@ export interface CaseInput {
   spIds: string[];
   /** 直接輸入、尚未建檔的 SP 姓名 */
   newSpNames?: string[];
+  /** 此教案還需要、仍在尋找中的 SP 人數 */
+  seeking?: number;
 }
 
 export interface SessionInput {

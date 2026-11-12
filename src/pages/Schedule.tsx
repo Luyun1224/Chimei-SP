@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Download, Plus, Search } from 'lucide-react'
 import type { Session, SessionStatus } from '../../shared/types';
 import { addDays, fmtDate, fmtDateShort, startOfWeek, toMinutes, weekdayLabel } from '../../shared/time';
 import { useCanEdit, useSnap, spName } from '../lib/store';
+import { seekingTotal } from '../../shared/seeking';
 import { navigate, type Route } from '../lib/router';
 import { download, toCsv } from '../lib/csv';
 import { useSessionUI } from '../features/sessions';
@@ -95,6 +96,7 @@ function SessionChip({ s, compact }: { s: Session; compact?: boolean }) {
         className={cx('w-full truncate rounded-[8px] px-1.5 py-0.5 text-left text-[12px] transition', chipTone[s.status], s.syncStatus === 'failed' && 'ring-2 ring-danger/60')}
         aria-label={`${s.startTime} ${s.topic}，${SESSION_STATUS[s.status].label}`}
       >
+        {seekingTotal(s.seeking) > 0 && s.status !== 'cancelled' && <span title="SP 尋找中" className="mr-1 inline-block size-2 rounded-full bg-gold align-middle ring-1 ring-white" />}
         <span className="num font-semibold">{s.startTime}</span> {compact ? '' : s.topic}
       </button>
       <div role="tooltip" className="pointer-events-none invisible absolute left-0 top-full z-20 mt-1 w-64 translate-y-1 rounded-[14px] border border-line bg-white p-3 text-[12px] opacity-0 shadow-lift transition-all duration-150 group-hover/chip:visible group-hover/chip:translate-y-0 group-hover/chip:opacity-100 group-focus-within/chip:visible group-focus-within/chip:opacity-100 max-md:hidden">
@@ -103,6 +105,7 @@ function SessionChip({ s, compact }: { s: Session; compact?: boolean }) {
         <div className="num text-ink-2">報到 {s.checkinTime}｜演出 {s.startTime}–{s.endTime}</div>
         <div className="text-ink-2">{s.location}</div>
         <div className="mt-1 text-ink">SP：{names.join('、') || '—'}</div>
+        {s.seeking && <div className="mt-1 text-warn">尋找中：{s.seeking}</div>}
         <div className="mt-2"><SyncBadge status={s.syncStatus} /></div>
       </div>
     </div>
@@ -280,7 +283,7 @@ function ListView() {
                   <td className="font-medium">{s.topic}</td>
                   <td className="max-md:hidden">{s.unit}</td>
                   <td className="max-lg:hidden text-ink-2">{s.location}</td>
-                  <td>{(d.bySession.get(s.sessionId) || []).map((a) => spName(d, a)).join('、')}</td>
+                  <td>{(d.bySession.get(s.sessionId) || []).map((a) => spName(d, a)).join('、')}{s.seeking && s.status !== 'cancelled' && <div className="text-[12px] text-warn">尋找中：{s.seeking}</div>}</td>
                   <td><SessionBadge status={s.status} /></td>
                   <td className="max-md:hidden"><SyncBadge status={s.syncStatus} error={s.syncError} /></td>
                 </tr>

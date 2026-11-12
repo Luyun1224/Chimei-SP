@@ -6,6 +6,7 @@ import { AppError, validateSessionInput } from '../../shared/validate';
 import { addDays, diffMinutes, fmtDate, fmtDateShort, fmtDuration, toMinutes } from '../../shared/time';
 import { notifyState } from '../../shared/template';
 import { topicOf } from '../../shared/stats';
+import { parseSeeking } from '../../shared/seeking';
 import { feeLine, feeRule, fmtMoney, type FeeLine } from '../../shared/fee';
 import { API_VERSION } from '../../shared/version';
 import { useCanEdit, useData, spName } from '../lib/store';
@@ -49,10 +50,10 @@ export function SessionUIProvider({ children }: { children: ReactNode }) {
 }
 
 // ======================= 表單 =======================
-interface CaseRow { key: string; topic: string; sps: string[] }
+interface CaseRow { key: string; topic: string; sps: string[]; seeking: number }
 interface FormState { date: string; extraDates: string[]; unit: string; checkinTime: string; startTime: string; endTime: string; location: string; note: string; cases: CaseRow[] }
 let caseSeq = 0;
-const newCase = (topic = '', sps: string[] = []): CaseRow => ({ key: `c${++caseSeq}`, topic, sps });
+const newCase = (topic = '', sps: string[] = [], seeking = 0): CaseRow => ({ key: `c${++caseSeq}`, topic, sps, seeking });
 const blank = (date?: string): FormState => ({ date: date || '', extraDates: [], unit: '', checkinTime: '08:00', startTime: '08:30', endTime: '12:00', location: '', note: '', cases: [newCase()] });
 
 function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; prefill?: NewPrefill } | { kind: 'edit'; id: string } | null; onClose: () => void; onSaved: (id: string) => void }) {
@@ -79,6 +80,12 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
         groups.set(t, [...(groups.get(t) || []), a.spId]);
       }
       const cases = [...groups.entries()].map(([t, ids]) => newCase(t, ids));
+      // 尋找中的 SP：併入對應教案，沒有任何 SP 的教案另起一列
+      for (const sk of parseSeeking(src.seeking)) {
+        const c = cases.find((x) => x.topic === sk.topic);
+        if (c) c.seeking = sk.need;
+        else cases.push(newCase(sk.topic, [], sk.need));
+      }
       return { date, extraDates: [], unit: src.unit, checkinTime: src.checkinTime, startTime: src.startTime, endTime: src.endTime, location: src.location, note: src.note, cases: cases.length ? cases : [newCase(src.topic)] };
     };
     const copySrc = view.kind === 'new' && view.prefill?.copyFrom ? d.sessionMap.get(view.prefill.copyFrom) : undefined;
@@ -118,6 +125,7 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
 
   const minutes = /^\d\d:\d\d$/.test(form.startTime) && /^\d\d:\d\d$/.test(form.endTime) ? diffMinutes(form.startTime, form.endTime) : 0;
   const personTimes = form.cases.reduce((n, c) => n + c.sps.length, 0);
+  const seekingCount = form.cases.reduce((n, c) => n + c.seeking, 0);
 
   /** 表單 → API：'new:姓名' 轉為 newSpNames */
   const payload = (): SessionInput => ({
@@ -126,6 +134,7 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
       topic: c.topic,
       spIds: c.sps.filter((x) => !isNewSp(x)),
       newSpNames: c.sps.filter(isNewSp).map((x) => x.slice(NEW_SP_PREFIX.length)),
+      seeking: c.seeking,
     })),
   });
 
@@ -202,7 +211,7 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
         width={640}
         footer={
           <>
-            <span className="mr-auto text-[12px] text-ink-3">{minutes > 0 && `預定演出 ${fmtDuration(minutes)} · ${form.cases.length} 個教案 · ${personTimes} 人次`}</span>
+            <span className="mr-auto text-[12px] text-ink-3">{minutes > 0 && `預定演出 ${fmtDuration(minutes)} · ${form.cases.length} 個教案 · ${personTimes} 人次${seekingCount ? ` · 尋找中 ${seekingCount} 位` : ''}`}</span>
             <Button onClick={onClose}>取消</Button>
             <Button variant="primary" loading={saving} onClick={() => submit(false)} icon={<CalendarCheck2 className="size-4" />}>
               {!editing && form.extraDates.length ? `儲存 ${form.extraDates.length + 1} 個日期` : st.calendarId ? '儲存並排入日曆' : '儲存'}
@@ -257,6 +266,22 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
                   </div>
                   {errors[`case${i}.topic`] && <p className="mb-1 text-[12px] text-danger">{errors[`case${i}.topic`]}</p>}
                   <SpPicker sps={snap.sps} value={c.sps} onChange={(v) => setCase(i, { sps: v })} busy={busy} invalid={!!errors[`case${i}.sps`]} />
+                  <div className={cx('mt-2 flex flex-wrap items-center gap-2 rounded-[12px] px-3 py-2 text-[13px] transition', c.seeking ? 'bg-warn-50 ring-1 ring-warn/30' : 'bg-mist/50')}>
+                    <label className="flex cursor-pointer items-center gap-2 text-ink-2">
+                      <input type="checkbox" className="size-4 accent-[#A86E12]" checked={c.seeking > 0} onChange={(e) => setCase(i, { seeking: e.target.checked ? 1 : 0 })} />
+                      SP 尋找中
+                    </label>
+                    {c.seeking > 0 && (
+                      <span className="flex items-center gap-1.5 text-ink-2">
+                        還缺
+                        <button type="button" aria-label="減少" className="size-7 rounded-full bg-white ring-1 ring-line hover:ring-pine/40" onClick={() => setCase(i, { seeking: Math.max(1, c.seeking - 1) })}>−</button>
+                        <b className="num w-5 text-center text-ink">{c.seeking}</b>
+                        <button type="button" aria-label="增加" className="size-7 rounded-full bg-white ring-1 ring-line hover:ring-pine/40" onClick={() => setCase(i, { seeking: Math.min(50, c.seeking + 1) })}>＋</button>
+                        位
+                      </span>
+                    )}
+                    {c.seeking > 0 && <span className="text-[12px] text-ink-3">找到後再編輯排程加入即可，總覽會持續提醒</span>}
+                  </div>
                   {errors[`case${i}.sps`] && <p className="mt-1 text-[12px] text-danger">{errors[`case${i}.sps`]}</p>}
                 </motion.li>
               ))}
@@ -402,6 +427,15 @@ function SessionDetailDrawer({ id, onClose, onEdit, onCopy }: { id: string | nul
           </dl>
 
           <section>
+            {parseSeeking(s.seeking).length > 0 && s.status !== 'cancelled' && (
+              <div className="mb-3 rounded-[14px] bg-warn-50 px-4 py-3 text-[14px] ring-1 ring-warn/30">
+                <div className="flex items-center gap-1.5 font-semibold text-warn"><AlertTriangle className="size-4" />SP 尚未排定</div>
+                <ul className="mt-1 space-y-0.5 text-ink">
+                  {parseSeeking(s.seeking).map((x) => <li key={x.topic}>{x.topic}：還缺 <b className="num">{x.need}</b> 位（尋找中）</li>)}
+                </ul>
+                {canEdit && <Button size="sm" variant="ghost" className="mt-1" onClick={() => onEdit(s.sessionId)}>找到了，編輯加入 SP →</Button>}
+              </div>
+            )}
             <h3 className="mb-2 flex items-center gap-1.5 text-[14px] font-semibold text-ink"><Users className="size-4 text-pine" />SP 人員（{list.length}）</h3>
             <div className="space-y-3">
               {groupByTopic(list, s).map(([topic, items]) => (

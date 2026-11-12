@@ -42,6 +42,12 @@ export function createSheetsRepo(ss: GoogleAppsScript.Spreadsheet.Spreadsheet): 
     const sheet = sheetOf(def.sheet, def.legacySheet);
     const values = sheet.getDataRange().getValues();
     const header = (values[0] || []).map(String);
+    // 新版本新增的欄位：自動補在表頭最後（不需重新執行 setupSpreadsheet）
+    const missing = def.columns.filter((c) => !c.compute && colIndex(header, c) < 0).map((c) => c.label);
+    if (missing.length && header.length) {
+      sheet.getRange(1, header.length + 1, 1, missing.length).setValues([missing]);
+      header.push(...missing);
+    }
     const idCol = def.columns.find((c) => c.key === def.idKey)!;
     const idIdx = colIndex(header, idCol);
     if (idIdx < 0) throw new AppError('NOT_CONFIGURED', `工作表「${def.sheet}」缺少主鍵欄位 ${def.idKey}`);

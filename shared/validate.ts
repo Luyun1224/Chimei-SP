@@ -1,5 +1,6 @@
 import type { SessionInput, SpInput, SpStatus, VerifyInput } from './types';
 import { diffMinutes, isValidDate, isValidTime } from './time';
+import { formatSeeking } from './seeking';
 
 export class AppError extends Error {
   constructor(
@@ -95,7 +96,9 @@ export interface NormalizedSession {
   endTime: string;
   location: string;
   note: string;
-  cases: { topic: string; spIds: string[]; newSpNames: string[] }[];
+  cases: { topic: string; spIds: string[]; newSpNames: string[]; seeking: number }[];
+  /** 尋找中摘要（教案×人數） */
+  seeking: string;
   /** 所有教案的既有 SP（不重複），供衝突偵測 */
   spIds: string[];
 }
@@ -110,6 +113,7 @@ export function validateSessionInput(raw: SessionInput): NormalizedSession {
     topic: clean(c.topic, MAX.text),
     spIds: uniq((Array.isArray(c.spIds) ? c.spIds : []).map((x) => clean(x, 40)).filter(Boolean)),
     newSpNames: uniq((Array.isArray(c.newSpNames) ? c.newSpNames : []).map((x) => clean(x, MAX.name)).filter(Boolean)),
+    seeking: Math.max(0, Math.min(50, Math.floor(Number((c as { seeking?: number }).seeking) || 0))),
   }));
   const v: NormalizedSession = {
     date: clean(raw.date, 10),
@@ -122,6 +126,7 @@ export function validateSessionInput(raw: SessionInput): NormalizedSession {
     note: clean(raw.note, MAX.note),
     cases,
     spIds: uniq(cases.flatMap((c) => c.spIds)),
+    seeking: formatSeeking(cases.map((c) => ({ topic: c.topic, need: c.seeking }))),
   };
   const e: Errors = {};
   if (!isValidDate(v.date)) e.date = '請選擇正確的演出日期';
@@ -139,7 +144,7 @@ export function validateSessionInput(raw: SessionInput): NormalizedSession {
     if (!c.topic) e[`case${i}.topic`] = '請輸入教案主題';
     else if (seen.has(c.topic)) e[`case${i}.topic`] = '同一場次的教案主題重複，請合併為同一列';
     seen.add(c.topic);
-    if (!c.spIds.length && !c.newSpNames.length) e[`case${i}.sps`] = '請至少選擇或輸入一位 SP';
+    if (!c.spIds.length && !c.newSpNames.length && !c.seeking) e[`case${i}.sps`] = '請選擇或輸入 SP，或勾選「SP 尋找中」';
     if (c.spIds.length + c.newSpNames.length > 50) e[`case${i}.sps`] = '單一教案 SP 人數過多';
   });
   // 舊版欄位名稱（單一教案）也提供錯誤訊息

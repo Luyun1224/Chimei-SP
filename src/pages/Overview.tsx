@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import { motion } from 'motion/react';
-import { ArrowUpRight, BarChart3, BellRing, CalendarDays, ClipboardCheck, Copy, Plus, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, BarChart3, BellRing, CalendarDays, ClipboardCheck, Copy, Plus, Sparkles } from 'lucide-react';
 import { useCanEdit, useSnap, spName } from '../lib/store';
 import { computeOverview, needsVerification } from '../../shared/stats';
 import { addDays, fmtDate, fmtDateShort, fmtHours, weekdayLabel } from '../../shared/time';
 import { notifyState, renderSummary } from '../../shared/template';
 import { copyText } from '../lib/csv';
+import { parseSeeking, seekingTotal } from '../../shared/seeking';
 import { navigate } from '../lib/router';
 import { groupByTopic, useSessionUI } from '../features/sessions';
 import { useToast } from '../components/overlay';
@@ -22,6 +23,11 @@ export default function Overview() {
   const today = snap.today;
   const tomorrow = addDays(today, 1);
   const ov = useMemo(() => computeOverview(snap, today), [snap, today]);
+  /** 尚在尋找 SP 的場次（今天以後、未取消） */
+  const unstaffed = useMemo(
+    () => snap.sessions.filter((s) => !s.isDeleted && s.status !== 'cancelled' && s.date >= today && seekingTotal(s.seeking) > 0).sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime)),
+    [snap.sessions, today],
+  );
 
   const tomorrowItems = useMemo(
     () => snap.sessions.filter((s) => s.date === tomorrow && s.status === 'scheduled').sort((a, b) => a.startTime.localeCompare(b.startTime)),
@@ -63,6 +69,29 @@ export default function Overview() {
         </div>
       </header>
 
+      {canEdit && unstaffed.length > 0 && (
+        <section role="alert" className="mb-4 rounded-[20px] border border-warn/40 bg-warn-50 p-4 sm:p-5">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <AlertTriangle className="size-5 text-warn" />
+            <h2 className="text-[16px] font-semibold text-ink">尚未完成排定 SP 的場次</h2>
+            <span className="rounded-full bg-warn px-2 py-0.5 text-[12px] font-semibold text-white">{unstaffed.length} 場</span>
+            <span className="text-[12px] text-ink-3">共還缺 {unstaffed.reduce((n, s) => n + seekingTotal(s.seeking), 0)} 位 SP</span>
+          </div>
+          <ul className="divide-y divide-warn/20">
+            {unstaffed.slice(0, 8).map((s) => (
+              <li key={s.sessionId}>
+                <button onClick={() => ui.openDetail(s.sessionId)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 py-2 text-left hover:text-pine">
+                  <span className="num w-[92px] text-[13px] font-semibold text-ink">{fmtDateShort(s.date)}</span>
+                  <span className="num text-[13px] text-ink-3">{s.startTime}–{s.endTime}</span>
+                  <span className="text-[14px]">{s.unit}</span>
+                  <span className="text-[13px] text-warn">{parseSeeking(s.seeking).map((x) => `${x.topic} 還缺 ${x.need} 位`).join('、')}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {unstaffed.length > 8 && <p className="mt-1 text-[12px] text-ink-3">另有 {unstaffed.length - 8} 場，請至演出排程查看</p>}
+        </section>
+      )}
       {canEdit && !snap.settings.calendarId && (
         <button onClick={() => navigate('/settings')} className="mb-4 flex w-full items-center gap-2 rounded-[16px] border border-gold/50 bg-gold-50 px-4 py-3 text-left text-[14px] text-ink">
           <CalendarDays className="size-4 shrink-0 text-gold-600" />
@@ -189,6 +218,7 @@ export default function Overview() {
                     <span className="flex flex-col items-end gap-1">
                       <SessionBadge status={s.status} />
                       <span className="text-[12px] text-ink-3">{(d.bySession.get(s.sessionId) || []).map((a) => spName(d, a)).join('、')}</span>
+                      {seekingTotal(s.seeking) > 0 && <span className="text-[12px] font-medium text-warn">SP 尋找中 {seekingTotal(s.seeking)} 位</span>}
                     </span>
                   </button>
                 </li>
