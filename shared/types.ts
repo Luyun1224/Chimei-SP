@@ -47,6 +47,8 @@ export type SyncStatus = 'pending' | 'synced' | 'failed' | 'removed' | 'disabled
 export interface Session {
   sessionId: string;
   date: string;
+  /** 演出類型（OSCE、醫病溝通…），供年度統計；空白為舊資料「未分類」 */
+  category?: string;
   unit: string;
   topic: string;
   checkinTime: string;
@@ -134,6 +136,8 @@ export interface Settings {
   adminReminderMinutes: number;
   individualTemplate: string;
   summaryTemplate: string;
+  /** 演出類型選項（可自行新增） */
+  categories: string[];
   units: string[];
   topics: string[];
   locations: string[];
@@ -199,6 +203,8 @@ export interface CaseInput {
 
 export interface SessionInput {
   date: string;
+  /** 演出類型 */
+  category?: string;
   unit: string;
   /** 舊版單一教案欄位；有 cases 時由各教案自動彙總 */
   topic?: string;

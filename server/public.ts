@@ -54,7 +54,7 @@ export function publicSnapshot(s: Snapshot): Snapshot {
     sessions: s.sessions.map(publicSession),
     assignments: s.assignments.filter((a) => !a.isDeleted).map(publicAssignment),
     notifications: [],
-    settings: { ...DEFAULT_SETTINGS, units: s.settings.units, topics: s.settings.topics, locations: s.settings.locations, calendarId: '', individualTemplate: '', summaryTemplate: '' },
+    settings: { ...DEFAULT_SETTINGS, categories: s.settings.categories, units: s.settings.units, topics: s.settings.topics, locations: s.settings.locations, calendarId: '', individualTemplate: '', summaryTemplate: '' },
   };
 }
 

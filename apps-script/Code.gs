@@ -161,6 +161,7 @@ var SPHub = (() => {
     }));
     const v = {
       date: clean(raw.date, 10),
+      category: clean(raw.category, 40),
       unit: clean(raw.unit, MAX.text),
       topic: clean(uniq(cases.map((c) => c.topic).filter(Boolean)).join("、"), 300),
       checkinTime: clean(raw.checkinTime, 5),
@@ -229,7 +230,51 @@ var SPHub = (() => {
     return /^[=+@]/.test(s2) ? `'${s2}` : s2;
   }
 
+  // shared/template.ts
+  var OTHER_CATEGORY = "其他";
+  var UNCATEGORIZED = "未分類";
+  var DEFAULT_CATEGORIES = ["OSCE", "醫病溝通", "影片拍攝", "急診演習", "TRM急救訓練", "超音波演練", "院外演出", OTHER_CATEGORY];
+  var DEFAULT_INDIVIDUAL_TEMPLATE = `{SP姓名} 您好，提醒您{相對日}有標準化病人（SP）演出安排：
+
+📅 演出日期：{日期}
+📍 演出地點：{地點}
+🕘 報到時間：{報到時間}
+⏰ 演出時間：{開始時間}–{結束時間}
+📋 教案主題：{教案名稱}
+
+再請您依報到時間準時抵達，謝謝您的協助！`;
+  var DEFAULT_SUMMARY_TEMPLATE = `【SP 演出總整理】{日期}
+共 {場次數} 場、SP {人次} 人次
+
+{場次清單}
+
+如有異動將另行通知，謝謝各位的協助！`;
+  var DEFAULT_SETTINGS = {
+    calendarId: "",
+    adminReminderEnabled: true,
+    adminReminderMinutes: 1440,
+    individualTemplate: DEFAULT_INDIVIDUAL_TEMPLATE,
+    summaryTemplate: DEFAULT_SUMMARY_TEMPLATE,
+    categories: DEFAULT_CATEGORIES,
+    units: [],
+    topics: [],
+    locations: [],
+    inactiveThresholdDays: 90,
+    feeHourly: 500,
+    feeHalf: 250,
+    feeThresholdMinutes: 15
+  };
+  function sessionFingerprint(s2, a) {
+    const src = [s2.date, s2.checkinTime, s2.startTime, s2.endTime, s2.location, (a == null ? void 0 : a.topic) || s2.topic, s2.status, s2.isDeleted ? "D" : "", (a == null ? void 0 : a.attendance) === "cancelled" || (a == null ? void 0 : a.isDeleted) ? "X" : ""].join("|");
+    let h = 5381;
+    for (let i = 0; i < src.length; i++) h = (h << 5) + h + src.charCodeAt(i) >>> 0;
+    return h.toString(16);
+  }
+
   // shared/stats.ts
+  function categoryOf(s2) {
+    return (s2 == null ? void 0 : s2.category) || UNCATEGORIZED;
+  }
   function topicOf(a, s2) {
     return a.topic || (s2 == null ? void 0 : s2.topic) || "";
   }
@@ -256,11 +301,11 @@ var SPHub = (() => {
     var _a;
     const sessionMap = new Map(data.sessions.map((s2) => [s2.sessionId, s2]));
     const spMap = new Map(data.sps.map((p) => [p.spId, p]));
-    const sessionInScope = (s2) => !s2.isDeleted && yearOf(s2.date) === f.year && (!f.month || monthOf(s2.date) === f.month) && (!f.unit || s2.unit === f.unit);
+    const sessionInScope = (s2) => !s2.isDeleted && yearOf(s2.date) === f.year && (!f.month || monthOf(s2.date) === f.month) && (!f.unit || s2.unit === f.unit) && (!f.category || categoryOf(s2) === f.category);
     const monthly = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, sessions: 0, personTimes: 0, minutes: 0 }));
     const monthSeen = Array.from({ length: 12 }, () => /* @__PURE__ */ new Set());
-    const bySp = /* @__PURE__ */ new Map(), byUnit = /* @__PURE__ */ new Map(), byTopic = /* @__PURE__ */ new Map();
-    const seenSp = /* @__PURE__ */ new Map(), seenUnit = /* @__PURE__ */ new Map(), seenTopic = /* @__PURE__ */ new Map();
+    const bySp = /* @__PURE__ */ new Map(), byUnit = /* @__PURE__ */ new Map(), byTopic = /* @__PURE__ */ new Map(), byCategory = /* @__PURE__ */ new Map();
+    const seenSp = /* @__PURE__ */ new Map(), seenUnit = /* @__PURE__ */ new Map(), seenTopic = /* @__PURE__ */ new Map(), seenCat = /* @__PURE__ */ new Map();
     const sessionSet = /* @__PURE__ */ new Set();
     let personTimes = 0, minutes = 0, unverified = 0;
     for (const a of data.assignments) {
@@ -284,6 +329,7 @@ var SPHub = (() => {
       inc(bySp, a.spId, ((_a = spMap.get(a.spId)) == null ? void 0 : _a.name) || a.spNameSnapshot, s2.sessionId, m, seenSp);
       inc(byUnit, s2.unit, s2.unit, s2.sessionId, m, seenUnit);
       inc(byTopic, topicOf(a, s2), topicOf(a, s2), s2.sessionId, m, seenTopic);
+      inc(byCategory, categoryOf(s2), categoryOf(s2), s2.sessionId, m, seenCat);
     }
     const statusCounts = { scheduled: 0, completed: 0, cancelled: 0 };
     let awaitingCompletion = 0;
@@ -315,6 +361,7 @@ var SPHub = (() => {
       bySp: spRows,
       byUnit: [...byUnit.values()].sort(byMinutes),
       byTopic: [...byTopic.values()].sort(byMinutes),
+      byCategory: [...byCategory.values()].sort((a, b) => b.sessions - a.sessions || byMinutes(a, b)),
       pending: { unverifiedAssignments: unverified, awaitingCompletion },
       concentration: {
         top20Share: minutes ? topMinutes / minutes : 0,
@@ -329,44 +376,7 @@ var SPHub = (() => {
   }
 
   // shared/version.ts
-  var API_VERSION = 6;
-
-  // shared/template.ts
-  var DEFAULT_INDIVIDUAL_TEMPLATE = `{SP姓名} 您好，提醒您{相對日}有標準化病人（SP）演出安排：
-
-📅 演出日期：{日期}
-📍 演出地點：{地點}
-🕘 報到時間：{報到時間}
-⏰ 演出時間：{開始時間}–{結束時間}
-📋 教案主題：{教案名稱}
-
-再請您依報到時間準時抵達，謝謝您的協助！`;
-  var DEFAULT_SUMMARY_TEMPLATE = `【SP 演出總整理】{日期}
-共 {場次數} 場、SP {人次} 人次
-
-{場次清單}
-
-如有異動將另行通知，謝謝各位的協助！`;
-  var DEFAULT_SETTINGS = {
-    calendarId: "",
-    adminReminderEnabled: true,
-    adminReminderMinutes: 1440,
-    individualTemplate: DEFAULT_INDIVIDUAL_TEMPLATE,
-    summaryTemplate: DEFAULT_SUMMARY_TEMPLATE,
-    units: [],
-    topics: [],
-    locations: [],
-    inactiveThresholdDays: 90,
-    feeHourly: 500,
-    feeHalf: 250,
-    feeThresholdMinutes: 15
-  };
-  function sessionFingerprint(s2, a) {
-    const src = [s2.date, s2.checkinTime, s2.startTime, s2.endTime, s2.location, (a == null ? void 0 : a.topic) || s2.topic, s2.status, s2.isDeleted ? "D" : "", (a == null ? void 0 : a.attendance) === "cancelled" || (a == null ? void 0 : a.isDeleted) ? "X" : ""].join("|");
-    let h = 5381;
-    for (let i = 0; i < src.length; i++) h = (h << 5) + h + src.charCodeAt(i) >>> 0;
-    return h.toString(16);
-  }
+  var API_VERSION = 7;
 
   // server/service.ts
   var AUDIT_MAX = 45e3;
@@ -408,6 +418,7 @@ var SPHub = (() => {
           patch[key] = JSON.stringify(st[key]);
         }
       };
+      add("categories", input.category);
       add("units", input.unit);
       for (const c of input.cases) add("topics", c.topic);
       add("locations", input.location);
@@ -459,6 +470,7 @@ var SPHub = (() => {
         date: s2.date,
         reminderMinutes: st.adminReminderEnabled ? st.adminReminderMinutes : null,
         description: [
+          s2.category ? `演出類型：${s2.category}` : "",
           `報到時間：${s2.checkinTime}`,
           `演出時間：${s2.startTime}–${s2.endTime}`,
           `申請單位：${s2.unit}`,
@@ -634,7 +646,7 @@ var SPHub = (() => {
             updatedBy: actor,
             version: 1
           });
-          const fields = { date: v.date, unit: v.unit, topic: v.topic, checkinTime: v.checkinTime, startTime: v.startTime, endTime: v.endTime, location: v.location, note: v.note, seeking: v.seeking };
+          const fields = { date: v.date, category: v.category, unit: v.unit, topic: v.topic, checkinTime: v.checkinTime, startTime: v.startTime, endTime: v.endTime, location: v.location, note: v.note, seeking: v.seeking };
           const auditCases = v.cases.map((c) => ({ topic: c.topic, sps: pairs.filter((p) => p.topic === c.topic).map((p) => {
             var _a;
             return (_a = spMap.get(p.spId)) == null ? void 0 : _a.name;
@@ -1019,7 +1031,7 @@ var SPHub = (() => {
       sessions: s2.sessions.map(publicSession),
       assignments: s2.assignments.filter((a) => !a.isDeleted).map(publicAssignment),
       notifications: [],
-      settings: { ...DEFAULT_SETTINGS, units: s2.settings.units, topics: s2.settings.topics, locations: s2.settings.locations, calendarId: "", individualTemplate: "", summaryTemplate: "" }
+      settings: { ...DEFAULT_SETTINGS, categories: s2.settings.categories, units: s2.settings.units, topics: s2.settings.topics, locations: s2.settings.locations, calendarId: "", individualTemplate: "", summaryTemplate: "" }
     };
   }
   function publicDispatch(action, full) {
@@ -1103,6 +1115,7 @@ var SPHub = (() => {
         s("location", "演出地點"),
         s("note", "備註"),
         s("seeking", "SP尋找中"),
+        s("category", "演出類型"),
         s("status", "排程狀態", ENUMS.sessionStatus),
         s("cancelReason", "取消原因"),
         s("calendarEventId", "日曆事件ID"),
@@ -1186,6 +1199,7 @@ var SPHub = (() => {
     adminReminderMinutes: "提前提醒分鐘數",
     individualTemplate: "個別通知範本",
     summaryTemplate: "總整理通知範本",
+    categories: "演出類型",
     units: "常用申請單位",
     topics: "常用教案主題",
     locations: "常用演出地點",

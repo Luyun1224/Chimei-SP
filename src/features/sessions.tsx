@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'motion/react';
-import { AlertTriangle, CalendarCheck2, CalendarPlus, CheckCheck, Copy, Clock, History, MapPin, Pencil, Plus, RefreshCw, Trash2, Users, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarCheck2, CalendarPlus, Check, CheckCheck, Copy, Clock, History, MapPin, Pencil, Plus, RefreshCw, Tag, Trash2, Users, X, XCircle } from 'lucide-react';
 import type { Assignment, AuditEntry, Session, SessionInput, Warning } from '../../shared/types';
 import { AppError, validateSessionInput } from '../../shared/validate';
 import { addDays, diffMinutes, fmtDate, fmtDateShort, fmtDuration, toMinutes } from '../../shared/time';
-import { notifyState } from '../../shared/template';
+import { categoryOptions, notifyState } from '../../shared/template';
 import { topicOf } from '../../shared/stats';
 import { parseSeeking } from '../../shared/seeking';
 import { feeLine, feeRule, fmtMoney, type FeeLine } from '../../shared/fee';
@@ -51,10 +51,10 @@ export function SessionUIProvider({ children }: { children: ReactNode }) {
 
 // ======================= 表單 =======================
 interface CaseRow { key: string; topic: string; sps: string[]; seeking: number }
-interface FormState { date: string; extraDates: string[]; unit: string; checkinTime: string; startTime: string; endTime: string; location: string; note: string; cases: CaseRow[] }
+interface FormState { date: string; extraDates: string[]; category: string; unit: string; checkinTime: string; startTime: string; endTime: string; location: string; note: string; cases: CaseRow[] }
 let caseSeq = 0;
 const newCase = (topic = '', sps: string[] = [], seeking = 0): CaseRow => ({ key: `c${++caseSeq}`, topic, sps, seeking });
-const blank = (date?: string): FormState => ({ date: date || '', extraDates: [], unit: '', checkinTime: '08:00', startTime: '08:30', endTime: '12:00', location: '', note: '', cases: [newCase()] });
+const blank = (date?: string): FormState => ({ date: date || '', extraDates: [], category: '', unit: '', checkinTime: '08:00', startTime: '08:30', endTime: '12:00', location: '', note: '', cases: [newCase()] });
 
 function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; prefill?: NewPrefill } | { kind: 'edit'; id: string } | null; onClose: () => void; onSaved: (id: string) => void }) {
   const { snap, d, mutate } = useData();
@@ -86,7 +86,7 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
         if (c) c.seeking = sk.need;
         else cases.push(newCase(sk.topic, [], sk.need));
       }
-      return { date, extraDates: [], unit: src.unit, checkinTime: src.checkinTime, startTime: src.startTime, endTime: src.endTime, location: src.location, note: src.note, cases: cases.length ? cases : [newCase(src.topic)] };
+      return { date, extraDates: [], category: src.category || '', unit: src.unit, checkinTime: src.checkinTime, startTime: src.startTime, endTime: src.endTime, location: src.location, note: src.note, cases: cases.length ? cases : [newCase(src.topic)] };
     };
     const copySrc = view.kind === 'new' && view.prefill?.copyFrom ? d.sessionMap.get(view.prefill.copyFrom) : undefined;
     if (view.kind === 'edit' && editing) {
@@ -129,7 +129,7 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
 
   /** 表單 → API：'new:姓名' 轉為 newSpNames */
   const payload = (): SessionInput => ({
-    date: form.date, unit: form.unit, checkinTime: form.checkinTime, startTime: form.startTime, endTime: form.endTime, location: form.location, note: form.note,
+    date: form.date, category: form.category, unit: form.unit, checkinTime: form.checkinTime, startTime: form.startTime, endTime: form.endTime, location: form.location, note: form.note,
     cases: form.cases.map((c) => ({
       topic: c.topic,
       spIds: c.sps.filter((x) => !isNewSp(x)),
@@ -154,10 +154,15 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
   }
 
   async function submit(confirm = false) {
+    const categoryError = form.category.trim() ? '' : '請選擇演出類型（年度統計用）';
     try {
       validateSessionInput(payload());
     } catch (e) {
-      if (e instanceof AppError) setErrors(((e.details as { fields: Record<string, string> })?.fields) || {});
+      if (e instanceof AppError) setErrors({ ...(((e.details as { fields: Record<string, string> })?.fields) || {}), ...(categoryError && { category: categoryError }) });
+      return;
+    }
+    if (categoryError) {
+      setErrors({ category: categoryError });
       return;
     }
     if (snap?.mode === 'gas' && (snap.apiVersion || 0) < API_VERSION) {
@@ -220,6 +225,16 @@ function SessionFormDrawer({ view, onClose, onSaved }: { view: { kind: 'new'; pr
         }
       >
         <form className="grid grid-cols-2 gap-4" onSubmit={(e) => { e.preventDefault(); submit(false); }}>
+          {/* 不用 Field（<label>）：label 內含多個按鈕時，點標題會誤觸第一個選項 */}
+          <div className="col-span-2 flex flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-ink-2">演出類型<span className="ml-0.5 text-gold-600">*</span></span>
+            <CategoryPicker value={form.category} options={categoryOptions(st.categories)} onChange={(v) => set('category', v)} invalid={!!errors.category} />
+            {errors.category ? (
+              <span role="alert" className="flex items-center gap-1 text-[12px] text-danger"><AlertTriangle className="size-3.5" />{errors.category}</span>
+            ) : (
+              <span className="text-[12px] text-ink-3">年度統計會依類型計算場次；沒有合適的可選「其他」，或按「新增類型」自訂</span>
+            )}
+          </div>
           <Field label="演出日期" required error={errors.date} className="col-span-2 sm:col-span-1">
             <input data-autofocus type="date" className={cx('field', errors.date && 'field-error')} value={form.date} onChange={(e) => set('date', e.target.value)} />
           </Field>
@@ -410,6 +425,7 @@ function SessionDetailDrawer({ id, onClose, onEdit, onCopy }: { id: string | nul
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
           <div className="flex flex-wrap items-center gap-2">
             <SessionBadge status={s.status} />
+            {s.category ? <CategoryBadge category={s.category} /> : <Badge tone="neutral">未分類</Badge>}
           </div>
           {canEdit && <CalendarPanel s={s} busy={busy === 'sync'} onSync={() => run('sync', async () => {
             const r = await mutate('session.resync', { sessionId: s.sessionId });
@@ -506,6 +522,71 @@ function SessionDetailDrawer({ id, onClose, onEdit, onCopy }: { id: string | nul
         </motion.div>
       )}
     </Drawer>
+  );
+}
+
+export function CategoryBadge({ category, className }: { category?: string; className?: string }) {
+  if (!category) return null;
+  return (
+    <span className={cx('inline-flex items-center gap-1 rounded-full bg-gold-50 px-2.5 py-0.5 text-[12px] font-medium text-gold-600 ring-1 ring-gold/40', className)}>
+      <Tag className="size-3" />{category}
+    </span>
+  );
+}
+
+/** 演出類型單選：常用類型以按鈕呈現，「其他」固定在最後；可直接新增類型（儲存後自動加入系統設定） */
+function CategoryPicker({ value, options, onChange, invalid }: { value: string; options: string[]; onChange: (v: string) => void; invalid?: boolean }) {
+  const [adding, setAdding] = useState(false);
+  const [text, setText] = useState('');
+  // 已選但不在選項中（剛新增、或設定中已移除的舊類型）也要顯示
+  const list = value && !options.includes(value) ? [...options.slice(0, -1), value, options[options.length - 1]] : options;
+  const commit = () => {
+    const v = text.trim().slice(0, 40);
+    if (v) onChange(v);
+    setText('');
+    setAdding(false);
+  };
+  return (
+    <div role="radiogroup" aria-label="演出類型" className={cx('flex flex-wrap gap-1.5 rounded-[14px] p-1', invalid && 'ring-2 ring-danger/40')}>
+      {list.map((c) => {
+        const on = c === value;
+        return (
+          <button
+            key={c}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(on ? '' : c)}
+            className={cx('inline-flex h-9 items-center gap-1 rounded-full px-3.5 text-[14px] transition', on ? 'bg-pine font-medium text-white shadow-sm' : 'bg-white text-ink ring-1 ring-line hover:ring-pine/40')}
+          >
+            {on && <Check className="size-3.5" />}{c}
+          </button>
+        );
+      })}
+      {adding ? (
+        <span className="inline-flex items-center gap-1">
+          <input
+            autoFocus
+            className="field !h-9 !w-40 !py-1"
+            value={text}
+            maxLength={40}
+            placeholder="輸入新類型名稱"
+            aria-label="新類型名稱"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); commit(); }
+              if (e.key === 'Escape') { e.preventDefault(); setAdding(false); setText(''); }
+            }}
+          />
+          <Button type="button" size="sm" onClick={commit} disabled={!text.trim()}>加入</Button>
+          <IconButton label="取消新增類型" onClick={() => { setAdding(false); setText(''); }}><X className="size-4" /></IconButton>
+        </span>
+      ) : (
+        <button type="button" onClick={() => setAdding(true)} className="inline-flex h-9 items-center gap-1 rounded-full border border-dashed border-line px-3 text-[13px] text-ink-2 hover:border-pine/50 hover:text-pine">
+          <Plus className="size-3.5" />新增類型
+        </button>
+      )}
+    </div>
   );
 }
 

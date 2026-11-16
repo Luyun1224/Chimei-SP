@@ -1,6 +1,17 @@
 import type { Assignment, NotificationEntry, Session, Settings } from './types';
 import { addDays, fmtDate, fmtDateShort, weekdayLabel } from './time';
 
+/** 預設演出類型；「其他」固定保留，可在系統設定新增類型 */
+export const OTHER_CATEGORY = '其他';
+export const UNCATEGORIZED = '未分類';
+export const DEFAULT_CATEGORIES = ['OSCE', '醫病溝通', '影片拍攝', '急診演習', 'TRM急救訓練', '超音波演練', '院外演出', OTHER_CATEGORY];
+
+/** 表單上的類型選項：設定中的類型，「其他」固定放最後 */
+export function categoryOptions(list: string[] | undefined): string[] {
+  const base = (list && list.length ? list : DEFAULT_CATEGORIES).filter((x) => x && x !== OTHER_CATEGORY);
+  return [...new Set(base), OTHER_CATEGORY];
+}
+
 export const DEFAULT_INDIVIDUAL_TEMPLATE = `{SP姓名} 您好，提醒您{相對日}有標準化病人（SP）演出安排：
 
 📅 演出日期：{日期}
@@ -24,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   adminReminderMinutes: 1440,
   individualTemplate: DEFAULT_INDIVIDUAL_TEMPLATE,
   summaryTemplate: DEFAULT_SUMMARY_TEMPLATE,
+  categories: DEFAULT_CATEGORIES,
   units: [],
   topics: [],
   locations: [],

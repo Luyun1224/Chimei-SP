@@ -61,12 +61,13 @@ export function createService({ repo, env, calendar }: Deps) {
   function rememberOptions(input: NormalizedSession) {
     const st = getSettings();
     const patch: Record<string, string> = {};
-    const add = (key: 'units' | 'topics' | 'locations', v: string) => {
+    const add = (key: 'categories' | 'units' | 'topics' | 'locations', v: string) => {
       if (v && !st[key].includes(v)) {
         st[key] = [...st[key], v].slice(-300);
         patch[key] = JSON.stringify(st[key]);
       }
     };
+    add('categories', input.category);
     add('units', input.unit);
     for (const c of input.cases) add('topics', c.topic);
     add('locations', input.location);
@@ -120,6 +121,7 @@ export function createService({ repo, env, calendar }: Deps) {
       date: s.date,
       reminderMinutes: st.adminReminderEnabled ? st.adminReminderMinutes : null,
       description: [
+        s.category ? `演出類型：${s.category}` : '',
         `報到時間：${s.checkinTime}`,
         `演出時間：${s.startTime}–${s.endTime}`,
         `申請單位：${s.unit}`,
@@ -275,7 +277,7 @@ export function createService({ repo, env, calendar }: Deps) {
           approvedMinutes: null, minutesNote: '', verifyStatus: 'unverified', verifiedBy: '', verifiedAt: '', isDeleted: false,
           createdAt: now, updatedAt: now, updatedBy: actor, version: 1,
         });
-        const fields = { date: v.date, unit: v.unit, topic: v.topic, checkinTime: v.checkinTime, startTime: v.startTime, endTime: v.endTime, location: v.location, note: v.note, seeking: v.seeking };
+        const fields = { date: v.date, category: v.category, unit: v.unit, topic: v.topic, checkinTime: v.checkinTime, startTime: v.startTime, endTime: v.endTime, location: v.location, note: v.note, seeking: v.seeking };
         const auditCases = v.cases.map((c) => ({ topic: c.topic, sps: pairs.filter((p) => p.topic === c.topic).map((p) => spMap.get(p.spId)?.name) }));
         const initialSync = calendarOn ? 'pending' : 'disabled';
 

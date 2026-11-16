@@ -40,7 +40,17 @@ export default function Report({ route }: { route: Route }) {
       <p className="mt-3 text-[12px] text-ink-3">平均每位活躍 SP 演出 {fmtHours(st.avgMinutesPerSp)} 小時；時數前 20% 之 SP 占總人時 {Math.round(st.concentration.top20Share * 100)}%。{st.pending.unverifiedAssignments + st.pending.awaitingCompletion > 0 && `另有 ${st.pending.unverifiedAssignments} 筆明細、${st.pending.awaitingCompletion} 場演出尚待核定，未列入本報告。`}</p>
 
       <section className="print-avoid mt-8">
-        <h2 className="mb-3 text-[16px] font-semibold text-ink">一、月度演出場次與 SP 人次</h2>
+        <h2 className="mb-3 text-[16px] font-semibold text-ink">一、各演出類型場次統計</h2>
+        <table className="tbl text-[13px]">
+          <thead><tr><th>演出類型</th><th className="text-right">場次</th><th className="text-right">人次</th><th className="text-right">核定人時</th></tr></thead>
+          <tbody>{st.byCategory.map((r) => <tr key={r.key}><td>{r.label}</td><td className="num text-right font-semibold">{r.sessions}</td><td className="num text-right">{r.personTimes}</td><td className="num text-right">{fmtHours(r.minutes)}</td></tr>)}</tbody>
+          <tfoot><tr className="border-t border-line font-semibold"><td>合計</td><td className="num text-right">{st.sessions}</td><td className="num text-right">{st.personTimes}</td><td className="num text-right">{fmtHours(st.minutes)}</td></tr></tfoot>
+        </table>
+        {!st.byCategory.length && <p className="mt-2 text-[12px] text-ink-3">本年度尚無核定紀錄。</p>}
+      </section>
+
+      <section className="print-avoid mt-10">
+        <h2 className="mb-3 text-[16px] font-semibold text-ink">二、月度演出場次與 SP 人次</h2>
         <MonthlyBars data={st.monthly} series={[{ key: 'sessions', label: '場次', color: C.gold }, { key: 'personTimes', label: 'SP 人次', color: C.pine }]} height={220} />
         <table className="tbl mt-3 text-[12px]">
           <thead><tr><th>月份</th>{st.monthly.map((m) => <th key={m.month} className="text-right">{m.month}</th>)}</tr></thead>
@@ -53,7 +63,7 @@ export default function Report({ route }: { route: Route }) {
       </section>
 
       <section className="print-break mt-10">
-        <h2 className="mb-3 text-[16px] font-semibold text-ink">二、各 SP 年度演出統計</h2>
+        <h2 className="mb-3 text-[16px] font-semibold text-ink">三、各 SP 年度演出統計</h2>
         <table className="tbl text-[13px]">
           <thead><tr><th>#</th><th>SP</th><th className="text-right">場次</th><th className="text-right">人次</th><th className="text-right">核定人時</th></tr></thead>
           <tbody>{st.bySp.map((r, i) => <tr key={r.key}><td className="num text-ink-3">{i + 1}</td><td>{r.label}</td><td className="num text-right">{r.sessions}</td><td className="num text-right">{r.personTimes}</td><td className="num text-right font-semibold">{fmtHours(r.minutes)}</td></tr>)}</tbody>
@@ -62,12 +72,12 @@ export default function Report({ route }: { route: Route }) {
 
       <section className="print-avoid mt-10 grid gap-8 sm:grid-cols-2">
         <div>
-          <h2 className="mb-3 text-[16px] font-semibold text-ink">三、各申請單位動用情形</h2>
+          <h2 className="mb-3 text-[16px] font-semibold text-ink">四、各申請單位動用情形</h2>
           <table className="tbl text-[13px]"><thead><tr><th>單位</th><th className="text-right">場次</th><th className="text-right">人次</th><th className="text-right">人時</th></tr></thead>
             <tbody>{st.byUnit.map((r) => <tr key={r.key}><td>{r.label}</td><td className="num text-right">{r.sessions}</td><td className="num text-right">{r.personTimes}</td><td className="num text-right">{fmtHours(r.minutes)}</td></tr>)}</tbody></table>
         </div>
         <div>
-          <h2 className="mb-3 text-[16px] font-semibold text-ink">四、教案主題分布</h2>
+          <h2 className="mb-3 text-[16px] font-semibold text-ink">五、教案主題分布</h2>
           <table className="tbl text-[13px]"><thead><tr><th>教案</th><th className="text-right">場次</th><th className="text-right">人次</th></tr></thead>
             <tbody>{st.byTopic.map((r) => <tr key={r.key}><td>{r.label}</td><td className="num text-right">{r.sessions}</td><td className="num text-right">{r.personTimes}</td></tr>)}</tbody></table>
         </div>

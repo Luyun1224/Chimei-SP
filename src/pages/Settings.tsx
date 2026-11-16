@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Activity, CalendarCog, Copy, ExternalLink, Link2, DatabaseBackup, Download, FlaskConical, History, ListPlus, Save, X } from 'lucide-react';
 import type { AuditEntry, HealthReport, Settings as S } from '../../shared/types';
+import { DEFAULT_CATEGORIES } from '../../shared/template';
 import { useSnap } from '../lib/store';
 import { call } from '../lib/api';
 import { copyText, download } from '../lib/csv';
@@ -111,8 +112,9 @@ export default function Settings() {
 
         <Card>
           <CardHead eyebrow="Options" title={<span className="flex items-center gap-2"><ListPlus className="size-5 text-pine" />常用選項</span>} />
-          <p className="mb-3 text-[12px] text-ink-3">新增排程時輸入的新單位、教案與地點會自動加入。</p>
+          <p className="mb-3 text-[12px] text-ink-3">新增排程時輸入的新類型、單位、教案與地點會自動加入。</p>
           <div className="space-y-4">
+            <OptionList label="演出類型" items={form.categories ?? DEFAULT_CATEGORIES} onChange={(categories) => setForm({ ...form, categories })} hint="年度統計依類型計算場次（例如 OSCE 幾場、醫病溝通幾場）；「其他」一律保留在選項最後。" />
             <OptionList label="申請單位" items={form.units} onChange={(units) => setForm({ ...form, units })} />
             <OptionList label="教案主題" items={form.topics} onChange={(topics) => setForm({ ...form, topics })} />
             <OptionList label="演出地點" items={form.locations} onChange={(locations) => setForm({ ...form, locations })} />
@@ -171,11 +173,12 @@ export default function Settings() {
   );
 }
 
-function OptionList({ label, items, onChange }: { label: string; items: string[]; onChange: (v: string[]) => void }) {
+function OptionList({ label, items, onChange, hint }: { label: string; items: string[]; onChange: (v: string[]) => void; hint?: string }) {
   const [v, setV] = useState('');
   return (
     <div>
       <div className="mb-1.5 text-[13px] font-medium text-ink-2">{label}（{items.length}）</div>
+      {hint && <p className="-mt-1 mb-1.5 text-[12px] text-ink-3">{hint}</p>}
       <div className="flex max-h-28 flex-wrap gap-1.5 overflow-auto">
         {items.map((i) => (
           <span key={i} className="inline-flex items-center gap-1 rounded-full bg-mist py-0.5 pl-2.5 pr-1 text-[13px]">

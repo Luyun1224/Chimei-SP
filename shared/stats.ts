@@ -8,6 +8,7 @@
  */
 import type { Assignment, SP, Session, SessionStatus } from './types';
 import { addDays, daysBetween, monthOf, startOfWeek, yearOf } from './time';
+import { UNCATEGORIZED } from './template';
 
 export interface StatFilter {
   year: number;
@@ -15,6 +16,8 @@ export interface StatFilter {
   spId?: string;
   unit?: string;
   topic?: string;
+  /** 演出類型；「未分類」代表舊資料沒有類型 */
+  category?: string;
 }
 
 export interface Row {
@@ -35,9 +38,16 @@ export interface AnnualStats {
   bySp: Row[];
   byUnit: Row[];
   byTopic: Row[];
+  /** 各演出類型（OSCE、醫病溝通…）的場次／人次／人時 */
+  byCategory: Row[];
   pending: { unverifiedAssignments: number; awaitingCompletion: number };
   concentration: { top20Share: number; topCount: number; buckets: { label: string; count: number }[] };
   statusCounts: Record<SessionStatus, number>;
+}
+
+/** 排程的演出類型；舊資料沒有時為「未分類」 */
+export function categoryOf(s: { category?: string } | undefined): string {
+  return s?.category || UNCATEGORIZED;
 }
 
 /** 明細的教案：同一場次可有多個教案；舊資料沒有時沿用排程的教案 */
@@ -91,12 +101,13 @@ export function computeStats(
     !s.isDeleted &&
     yearOf(s.date) === f.year &&
     (!f.month || monthOf(s.date) === f.month) &&
-    (!f.unit || s.unit === f.unit);
+    (!f.unit || s.unit === f.unit) &&
+    (!f.category || categoryOf(s) === f.category);
 
   const monthly = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, sessions: 0, personTimes: 0, minutes: 0 }));
   const monthSeen = Array.from({ length: 12 }, () => new Set<string>());
-  const bySp = new Map<string, Row>(), byUnit = new Map<string, Row>(), byTopic = new Map<string, Row>();
-  const seenSp = new Map<string, Set<string>>(), seenUnit = new Map<string, Set<string>>(), seenTopic = new Map<string, Set<string>>();
+  const bySp = new Map<string, Row>(), byUnit = new Map<string, Row>(), byTopic = new Map<string, Row>(), byCategory = new Map<string, Row>();
+  const seenSp = new Map<string, Set<string>>(), seenUnit = new Map<string, Set<string>>(), seenTopic = new Map<string, Set<string>>(), seenCat = new Map<string, Set<string>>();
   const sessionSet = new Set<string>();
   let personTimes = 0, minutes = 0, unverified = 0;
 
@@ -121,6 +132,7 @@ export function computeStats(
     inc(bySp, a.spId, spMap.get(a.spId)?.name || a.spNameSnapshot, s.sessionId, m, seenSp);
     inc(byUnit, s.unit, s.unit, s.sessionId, m, seenUnit);
     inc(byTopic, topicOf(a, s), topicOf(a, s), s.sessionId, m, seenTopic);
+    inc(byCategory, categoryOf(s), categoryOf(s), s.sessionId, m, seenCat);
   }
 
   const statusCounts: Record<SessionStatus, number> = { scheduled: 0, completed: 0, cancelled: 0 };
@@ -154,6 +166,7 @@ export function computeStats(
     bySp: spRows,
     byUnit: [...byUnit.values()].sort(byMinutes),
     byTopic: [...byTopic.values()].sort(byMinutes),
+    byCategory: [...byCategory.values()].sort((a, b) => b.sessions - a.sessions || byMinutes(a, b)),
     pending: { unverifiedAssignments: unverified, awaitingCompletion },
     concentration: {
       top20Share: minutes ? topMinutes / minutes : 0,

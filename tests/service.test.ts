@@ -427,3 +427,34 @@ describe('SP 尋找中', () => {
     expect(state.tables.assignments.filter((a) => !a.isDeleted)).toHaveLength(2);
   });
 });
+
+describe('演出類型', () => {
+  it('排程記錄演出類型；新類型自動加入選項；年度統計依類型計算場次，舊資料為「未分類」', () => {
+    const a = addSp('王小明'), b = addSp('李美華');
+    expect(svc.getSettings().categories).toEqual(['OSCE', '醫病溝通', '影片拍攝', '急診演習', 'TRM急救訓練', '超音波演練', '院外演出', '其他']);
+    const s1 = createSession([a.spId, b.spId], { date: '2026-11-03', category: 'OSCE' }).sessions![0];
+    const s2 = createSession([a.spId], { date: '2026-11-04', category: 'OSCE', startTime: '13:00', endTime: '15:00', checkinTime: '12:30' }).sessions![0];
+    const s3 = createSession([b.spId], { date: '2026-11-05', category: '醫病溝通' }).sessions![0];
+    const s4 = createSession([a.spId], { date: '2026-11-06', category: '高擬真模擬' }).sessions![0];
+    const s5 = createSession([b.spId], { date: '2026-11-07' }).sessions![0];
+    expect(s1.category).toBe('OSCE');
+    expect(state.tables.sessions.find((x) => x.sessionId === s3.sessionId)?.category).toBe('醫病溝通');
+    expect(svc.getSettings().categories).toContain('高擬真模擬');
+    expect(cal.events.find((e) => e.description.includes(s1.sessionId))?.description).toContain('演出類型：OSCE');
+    for (const s of [s1, s2, s3, s4, s5]) ok(svc.dispatch('session.verifyAllAsScheduled', { sessionId: s.sessionId }));
+
+    const st = computeStats({ sessions: state.tables.sessions, assignments: state.tables.assignments, sps: state.tables.sps }, { year: 2026 }, TODAY);
+    const row = (k: string) => st.byCategory.find((r) => r.key === k);
+    expect(row('OSCE')).toMatchObject({ sessions: 2, personTimes: 3, minutes: 180 * 2 + 120 });
+    expect(row('醫病溝通')).toMatchObject({ sessions: 1, personTimes: 1 });
+    expect(row('高擬真模擬')?.sessions).toBe(1);
+    expect(row('未分類')?.sessions).toBe(1);
+    expect(st.byCategory[0].key).toBe('OSCE');
+    expect(computeStats({ sessions: state.tables.sessions, assignments: state.tables.assignments, sps: state.tables.sps }, { year: 2026, category: 'OSCE' }, TODAY).sessions).toBe(2);
+
+    // 編輯可更改類型
+    const cur = state.tables.sessions.find((x) => x.sessionId === s5.sessionId)!;
+    const r = ok(svc.dispatch('session.save', { sessionId: cur.sessionId, input: input([b.spId], { date: '2026-11-07', category: '院外演出' }), expectedVersion: cur.version, requestId: 'edit-cat' }));
+    expect(r.sessions![0].category).toBe('院外演出');
+  });
+});

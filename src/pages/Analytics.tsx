@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Download, Printer, X } from 'lucide-react';
 import type { SessionStatus } from '../../shared/types';
-import { computeStats, inactiveSps, isCountable, topicOf, type Row } from '../../shared/stats';
+import { categoryOf, computeStats, inactiveSps, isCountable, topicOf, type Row } from '../../shared/stats';
+import { UNCATEGORIZED, categoryOptions } from '../../shared/template';
 import { fmtDate, fmtHours, minutesToHours, monthOf, rocYear, yearOf } from '../../shared/time';
 import { useSnap, spName } from '../lib/store';
 import { navigate, type Route } from '../lib/router';
@@ -18,6 +19,7 @@ export function useAnalyticsFilters(route: Route) {
     spId: q.get('sp') || undefined,
     unit: q.get('unit') || undefined,
     topic: q.get('topic') || undefined,
+    category: q.get('category') || undefined,
     status: (q.get('status') as SessionStatus) || undefined,
   };
 }
@@ -26,8 +28,8 @@ export default function Analytics({ route }: { route: Route }) {
   const { snap, d } = useSnap();
   const f = useAnalyticsFilters(route);
   const setF = (patch: Record<string, string | number | undefined>) =>
-    navigate('/analytics', { year: f.year, month: f.month, sp: f.spId, unit: f.unit, topic: f.topic, status: f.status, ...patch });
-  const st = useMemo(() => computeStats(snap, f, snap.today), [snap, f.year, f.month, f.spId, f.unit, f.topic]); // eslint-disable-line react-hooks/exhaustive-deps
+    navigate('/analytics', { year: f.year, month: f.month, sp: f.spId, unit: f.unit, topic: f.topic, category: f.category, status: f.status, ...patch });
+  const st = useMemo(() => computeStats(snap, f, snap.today), [snap, f.year, f.month, f.spId, f.unit, f.topic, f.category]); // eslint-disable-line react-hooks/exhaustive-deps
   const [threshold, setThreshold] = useState(snap.settings.inactiveThresholdDays);
   const idle = useMemo(() => inactiveSps(snap, snap.today, threshold), [snap, threshold]);
   const [metric, setMetric] = useState<'minutes' | 'personTimes'>('minutes');
@@ -36,13 +38,17 @@ export default function Analytics({ route }: { route: Route }) {
 
   const years = useMemo(() => [...new Set([yearOf(snap.today), ...snap.sessions.map((s) => yearOf(s.date))])].sort((a, b) => b - a), [snap]);
   const units = [...new Set(snap.sessions.map((s) => s.unit))].sort();
+  const categories = useMemo(() => {
+    const used = new Set(snap.sessions.filter((s) => !s.isDeleted).map(categoryOf));
+    return [...new Set([...categoryOptions(snap.settings.categories), UNCATEGORIZED])].filter((c) => used.has(c));
+  }, [snap]);
   const topics = [...new Set(snap.assignments.filter((a) => !a.isDeleted).map((a) => topicOf(a, d.sessionMap.get(a.sessionId))).filter(Boolean))].sort();
 
   // 明細（採用與 KPI 相同的篩選；可另外以排程狀態篩選）
   const detail = useMemo(() => snap.assignments
     .filter((a) => !a.isDeleted)
     .map((a) => ({ a, s: d.sessionMap.get(a.sessionId)! }))
-    .filter(({ a, s }) => s && yearOf(s.date) === f.year && (!f.month || monthOf(s.date) === f.month) && (!f.spId || a.spId === f.spId) && (!f.unit || s.unit === f.unit) && (!f.topic || topicOf(a, s) === f.topic) && (!f.status || s.status === f.status))
+    .filter(({ a, s }) => s && yearOf(s.date) === f.year && (!f.month || monthOf(s.date) === f.month) && (!f.spId || a.spId === f.spId) && (!f.unit || s.unit === f.unit) && (!f.category || categoryOf(s) === f.category) && (!f.topic || topicOf(a, s) === f.topic) && (!f.status || s.status === f.status))
     .sort((x, y) => (y.s.date + y.s.startTime).localeCompare(x.s.date + x.s.startTime)), [snap, d, f]);
 
   const spRows = useMemo(() => {
@@ -51,16 +57,19 @@ export default function Analytics({ route }: { route: Route }) {
   }, [st.bySp, tableQ, sort]);
 
   const monthData = st.monthly.map((m) => ({ ...m, hours: minutesToHours(m.minutes) }));
-  const hasFilter = f.month || f.spId || f.unit || f.topic || f.status;
+  const hasFilter = f.month || f.spId || f.unit || f.topic || f.category || f.status;
   const H = (r: Row) => ({ ...r, hours: minutesToHours(r.minutes) });
 
   const exportAll = () => {
     download(`SP年度成果_${f.year}_SP統計.csv`, toCsv(['SP', '場次', '人次', '核定分鐘', '核定人時'], st.bySp.map((r) => [r.label, r.sessions, r.personTimes, r.minutes, minutesToHours(r.minutes)])));
   };
+  const exportCategory = () => {
+    download(`SP年度成果_${f.year}_演出類型統計.csv`, toCsv(['演出類型', '場次', '人次', '核定分鐘', '核定人時'], st.byCategory.map((r) => [r.label, r.sessions, r.personTimes, r.minutes, minutesToHours(r.minutes)])));
+  };
   const exportDetail = () => {
     download(`SP年度成果_${f.year}_明細.csv`, toCsv(
-      ['演出日期', '申請單位', '教案主題', 'SP', '排程狀態', '出席', '核定狀態', '核定分鐘', '計入實績'],
-      detail.map(({ a, s }) => [s.date, s.unit, topicOf(a, s), spName(d, a), SESSION_STATUS[s.status].label, a.attendance, a.verifyStatus, a.approvedMinutes ?? '', isCountable(a, s) ? '是' : '否']),
+      ['演出日期', '演出類型', '申請單位', '教案主題', 'SP', '排程狀態', '出席', '核定狀態', '核定分鐘', '計入實績'],
+      detail.map(({ a, s }) => [s.date, categoryOf(s), s.unit, topicOf(a, s), spName(d, a), SESSION_STATUS[s.status].label, a.attendance, a.verifyStatus, a.approvedMinutes ?? '', isCountable(a, s) ? '是' : '否']),
     ));
   };
 
@@ -82,6 +91,7 @@ export default function Analytics({ route }: { route: Route }) {
         <select className="field w-auto" value={f.year} onChange={(e) => setF({ year: e.target.value })} aria-label="年度">{years.map((y) => <option key={y} value={y}>{y}（民國 {rocYear(y)}）</option>)}</select>
         <select className="field w-auto" value={f.month || ''} onChange={(e) => setF({ month: e.target.value })} aria-label="月份"><option value="">全年</option>{Array.from({ length: 12 }, (_, i) => <option key={i} value={i + 1}>{i + 1} 月</option>)}</select>
         <select className="field w-auto max-w-[10rem]" value={f.spId || ''} onChange={(e) => setF({ sp: e.target.value })} aria-label="SP"><option value="">全部 SP</option>{snap.sps.map((p) => <option key={p.spId} value={p.spId}>{p.name}</option>)}</select>
+        <select className="field w-auto max-w-[10rem]" value={f.category || ''} onChange={(e) => setF({ category: e.target.value })} aria-label="演出類型"><option value="">全部類型</option>{categories.map((c) => <option key={c}>{c}</option>)}</select>
         <select className="field w-auto max-w-[10rem]" value={f.unit || ''} onChange={(e) => setF({ unit: e.target.value })} aria-label="申請單位"><option value="">全部單位</option>{units.map((u) => <option key={u}>{u}</option>)}</select>
         <select className="field w-auto max-w-[11rem]" value={f.topic || ''} onChange={(e) => setF({ topic: e.target.value })} aria-label="教案主題"><option value="">全部教案</option>{topics.map((u) => <option key={u}>{u}</option>)}</select>
         <select className="field w-auto" value={f.status || ''} onChange={(e) => setF({ status: e.target.value })} aria-label="演出狀態（明細）"><option value="">全部狀態</option><option value="scheduled">預定</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select>
@@ -124,6 +134,38 @@ export default function Analytics({ route }: { route: Route }) {
           <MonthlyBars data={st.monthly} series={[{ key: 'sessions', label: '場次', color: C.gold }, { key: 'personTimes', label: 'SP 人次', color: C.pine }]} onSelect={(m) => setF({ month: f.month === m ? undefined : m })} selected={f.month} height={220} />
         </Card>
       </div>
+
+      <Card className="mb-4">
+        <CardHead
+          eyebrow="I · Categories"
+          title="各演出類型場次統計"
+          action={<span className="flex items-center gap-2"><span className="text-[12px] text-ink-3 max-sm:hidden">點擊類型可篩選</span><Button size="sm" variant="ghost" icon={<Download className="size-3.5" />} onClick={exportCategory} disabled={!st.byCategory.length}>匯出</Button></span>}
+        />
+        {st.byCategory.length ? (
+          <div className="grid gap-5 lg:grid-cols-5">
+            <div className="lg:col-span-3">
+              <RankBars rows={st.byCategory} valueKey="sessions" unit="場" onSelect={(k) => setF({ category: f.category === k ? undefined : k })} selected={f.category} max={12} color={C.gold} />
+            </div>
+            <div className="overflow-auto lg:col-span-2">
+              <table className="tbl text-[13px]">
+                <thead><tr><th>類型</th><th className="text-right">場次</th><th className="text-right">人次</th><th className="text-right">人時</th></tr></thead>
+                <tbody>
+                  {st.byCategory.map((r) => (
+                    <tr key={r.key} className={cx('cursor-pointer', f.category === r.key && 'bg-gold-50')} onClick={() => setF({ category: f.category === r.key ? undefined : r.key })}>
+                      <td className={cx('font-medium', r.key === UNCATEGORIZED && 'text-ink-3')}>{r.label}</td>
+                      <td className="num text-right font-semibold">{r.sessions}</td>
+                      <td className="num text-right">{r.personTimes}</td>
+                      <td className="num text-right">{fmtHours(r.minutes)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot><tr className="border-t border-line font-semibold"><td>合計</td><td className="num text-right">{st.sessions}</td><td className="num text-right">{st.personTimes}</td><td className="num text-right">{fmtHours(st.minutes)}</td></tr></tfoot>
+              </table>
+              {st.byCategory.some((r) => r.key === UNCATEGORIZED) && <p className="mt-2 text-[12px] text-ink-3">「未分類」為尚未設定類型的排程，可在排程詳情按「編輯」補上。</p>}
+            </div>
+          </div>
+        ) : <Empty title="此範圍尚無核定紀錄" />}
+      </Card>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <Card>
@@ -211,16 +253,16 @@ export default function Analytics({ route }: { route: Route }) {
         </div>
         <div className="mt-3 max-h-[420px] overflow-auto">
           <table className="tbl">
-            <thead><tr><th>日期</th><th>教案</th><th className="max-md:hidden">單位</th><th>SP</th><th>狀態</th><th className="text-right">核定</th></tr></thead>
+            <thead><tr><th>日期</th><th className="max-sm:hidden">類型</th><th>教案</th><th className="max-md:hidden">單位</th><th>SP</th><th>狀態</th><th className="text-right">核定</th></tr></thead>
             <tbody>
               {detail.slice(0, 500).map(({ a, s }) => (
                 <tr key={a.assignmentId} className={cx(!isCountable(a, s) && 'text-ink-3')}>
-                  <td className="num whitespace-nowrap">{fmtDate(s.date)}</td><td>{topicOf(a, s)}</td><td className="max-md:hidden">{s.unit}</td><td>{spName(d, a)}</td>
+                  <td className="num whitespace-nowrap">{fmtDate(s.date)}</td><td className="max-sm:hidden whitespace-nowrap">{categoryOf(s)}</td><td>{topicOf(a, s)}</td><td className="max-md:hidden">{s.unit}</td><td>{spName(d, a)}</td>
                   <td><span className="flex flex-wrap gap-1"><Badge tone={SESSION_STATUS[s.status].tone}>{SESSION_STATUS[s.status].label}</Badge>{a.attendance === 'absent' && <Badge tone="danger">缺席</Badge>}</span></td>
                   <td className="num text-right">{isCountable(a, s) ? `${fmtHours(a.approvedMinutes!)} 小時` : a.verifyStatus === 'verified' ? '不計入' : '未核定'}</td>
                 </tr>
               ))}
-              {!detail.length && <tr><td colSpan={6} className="py-6 text-center text-ink-3">無資料</td></tr>}
+              {!detail.length && <tr><td colSpan={7} className="py-6 text-center text-ink-3">無資料</td></tr>}
             </tbody>
           </table>
         </div>

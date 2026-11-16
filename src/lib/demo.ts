@@ -65,6 +65,7 @@ export const demoControls = {
     );
     const units = ['醫學系 UGY', '護理部', 'PGY 訓練', '藥劑部', '醫學系 Clerk', '急診醫學部'];
     const topics = ['胸痛病史詢問', '腹痛身體檢查', '糖尿病衛教', '壞消息告知', '術前說明與同意', '頭痛鑑別診斷', '用藥諮詢', '跌倒風險評估', '出院衛教'];
+    const cats = ['OSCE', 'OSCE', 'OSCE', '醫病溝通', '醫病溝通', '影片拍攝', '急診演習', 'TRM急救訓練', '超音波演練', '院外演出', '其他'];
     const locs = ['技能中心 3F 第一考場', '技能中心 3F 第二考場', '技能中心 3F 第三考場', '教學大樓 B1 模擬病房'];
     const slots: [string, string, string][] = [['08:00', '08:30', '11:30'], ['12:30', '13:00', '17:00'], ['08:30', '09:00', '11:00'], ['13:30', '14:00', '16:30']];
     let seed = 11;
@@ -76,7 +77,7 @@ export const demoControls = {
       const [c, s, e] = pick(slots);
       const n = 1 + Math.floor(rnd() * 3);
       const ids = [...new Set(Array.from({ length: n }, () => pick(sps.filter((_, i) => i !== 10))))];
-      const input: SessionInput = { date, unit: pick(units), topic: pick(topics), checkinTime: c, startTime: s, endTime: e, location: pick(locs), spIds: ids, note: k % 7 === 0 ? '請著便服' : '' };
+      const input: SessionInput = { date, category: pick(cats), unit: pick(units), topic: pick(topics), checkinTime: c, startTime: s, endTime: e, location: pick(locs), spIds: ids, note: k % 7 === 0 ? '請著便服' : '' };
       return call('session.save', { input, requestId: `seed-${k}`, confirm: true }).sessions![0];
     };
     let k = 0;

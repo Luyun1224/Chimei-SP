@@ -5,9 +5,11 @@ import type { Session, SessionStatus } from '../../shared/types';
 import { addDays, fmtDate, fmtDateShort, startOfWeek, toMinutes, weekdayLabel } from '../../shared/time';
 import { useCanEdit, useSnap, spName } from '../lib/store';
 import { seekingTotal } from '../../shared/seeking';
+import { categoryOf } from '../../shared/stats';
+import { categoryOptions } from '../../shared/template';
 import { navigate, type Route } from '../lib/router';
 import { download, toCsv } from '../lib/csv';
-import { useSessionUI } from '../features/sessions';
+import { CategoryBadge, useSessionUI } from '../features/sessions';
 import { Button, Empty, IconButton, PageHeader, SESSION_STATUS, Segmented, SessionBadge, SyncBadge, cx } from '../components/ui';
 
 type ViewKind = 'month' | 'week' | 'list';
@@ -101,7 +103,7 @@ function SessionChip({ s, compact }: { s: Session; compact?: boolean }) {
       </button>
       <div role="tooltip" className="pointer-events-none invisible absolute left-0 top-full z-20 mt-1 w-64 translate-y-1 rounded-[14px] border border-line bg-white p-3 text-[12px] opacity-0 shadow-lift transition-all duration-150 group-hover/chip:visible group-hover/chip:translate-y-0 group-hover/chip:opacity-100 group-focus-within/chip:visible group-focus-within/chip:opacity-100 max-md:hidden">
         <div className="mb-1 flex items-center justify-between gap-2"><b className="text-[13px] text-ink">{s.topic}</b><SessionBadge status={s.status} /></div>
-        <div className="text-ink-2">{s.unit}</div>
+        <div className="text-ink-2">{s.category && <span className="mr-1 font-medium text-gold-600">［{s.category}］</span>}{s.unit}</div>
         <div className="num text-ink-2">報到 {s.checkinTime}｜演出 {s.startTime}–{s.endTime}</div>
         <div className="text-ink-2">{s.location}</div>
         <div className="mt-1 text-ink">SP：{names.join('、') || '—'}</div>
@@ -230,20 +232,26 @@ function ListView() {
   const ui = useSessionUI();
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<'' | SessionStatus>('');
+  const [category, setCategory] = useState('');
   const [range, setRange] = useState<'upcoming' | 'past' | 'all'>('upcoming');
   const rows = useMemo(() => {
     const k = q.trim().toLowerCase();
     return snap.sessions
       .filter((s) => (range === 'all' ? true : range === 'upcoming' ? s.date >= snap.today : s.date < snap.today))
       .filter((s) => !status || s.status === status)
-      .filter((s) => !k || [s.topic, s.unit, s.location, s.note, ...(d.bySession.get(s.sessionId) || []).map((a) => spName(d, a))].join(' ').toLowerCase().includes(k))
+      .filter((s) => !category || categoryOf(s) === category)
+      .filter((s) => !k || [s.category, s.topic, s.unit, s.location, s.note, ...(d.bySession.get(s.sessionId) || []).map((a) => spName(d, a))].join(' ').toLowerCase().includes(k))
       .sort((a, b) => (range === 'past' ? -1 : 1) * (a.date + a.startTime).localeCompare(b.date + b.startTime));
-  }, [snap, d, q, status, range]);
+  }, [snap, d, q, status, category, range]);
+  const categories = useMemo(() => {
+    const used = snap.sessions.map(categoryOf);
+    return [...new Set([...categoryOptions(snap.settings.categories), ...used])].filter((c) => used.includes(c));
+  }, [snap]);
 
   const exportCsv = () => {
     download(`SP排程_${snap.today}.csv`, toCsv(
-      ['排程ID', '演出日期', '申請單位', '教案主題', '報到時間', '演出開始', '演出結束', '演出地點', 'SP', '狀態', '日曆同步', '備註'],
-      rows.map((s) => [s.sessionId, s.date, s.unit, s.topic, s.checkinTime, s.startTime, s.endTime, s.location, (d.bySession.get(s.sessionId) || []).map((a) => spName(d, a)).join('、'), SESSION_STATUS[s.status].label, s.syncStatus, s.note]),
+      ['排程ID', '演出日期', '演出類型', '申請單位', '教案主題', '報到時間', '演出開始', '演出結束', '演出地點', 'SP', '狀態', '日曆同步', '備註'],
+      rows.map((s) => [s.sessionId, s.date, categoryOf(s), s.unit, s.topic, s.checkinTime, s.startTime, s.endTime, s.location, (d.bySession.get(s.sessionId) || []).map((a) => spName(d, a)).join('、'), SESSION_STATUS[s.status].label, s.syncStatus, s.note]),
     ));
   };
 
@@ -265,6 +273,10 @@ function ListView() {
           <option value="completed">已完成</option>
           <option value="cancelled">已取消</option>
         </select>
+        <select className="field w-auto max-w-[10rem]" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="演出類型">
+          <option value="">全部類型</option>
+          {categories.map((c) => <option key={c}>{c}</option>)}
+        </select>
         <Button size="sm" icon={<Download className="size-3.5" />} onClick={exportCsv} disabled={!rows.length}>匯出 CSV</Button>
       </div>
       {rows.length === 0 ? (
@@ -273,13 +285,14 @@ function ListView() {
         <div className="max-h-[70vh] overflow-auto">
           <table className="tbl">
             <thead>
-              <tr><th>日期</th><th>時間</th><th>教案主題</th><th className="max-md:hidden">申請單位</th><th className="max-lg:hidden">地點</th><th>SP</th><th>狀態</th><th className="max-md:hidden">日曆</th></tr>
+              <tr><th>日期</th><th>時間</th><th>類型</th><th>教案主題</th><th className="max-md:hidden">申請單位</th><th className="max-lg:hidden">地點</th><th>SP</th><th>狀態</th><th className="max-md:hidden">日曆</th></tr>
             </thead>
             <tbody>
               {rows.map((s) => (
                 <tr key={s.sessionId} className="cursor-pointer" onClick={() => ui.openDetail(s.sessionId)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && ui.openDetail(s.sessionId)}>
                   <td className="num whitespace-nowrap">{fmtDate(s.date)}</td>
                   <td className="num whitespace-nowrap text-ink-2">報到 {s.checkinTime}<br />{s.startTime}–{s.endTime}</td>
+                  <td className="whitespace-nowrap">{s.category ? <CategoryBadge category={s.category} /> : <span className="text-[12px] text-ink-3">未分類</span>}</td>
                   <td className="font-medium">{s.topic}</td>
                   <td className="max-md:hidden">{s.unit}</td>
                   <td className="max-lg:hidden text-ink-2">{s.location}</td>

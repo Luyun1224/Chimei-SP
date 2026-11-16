@@ -89,6 +89,7 @@ export function seniorityOf(firstCertYear: string, today: string): string {
 
 export interface NormalizedSession {
   date: string;
+  category: string;
   unit: string;
   topic: string;
   checkinTime: string;
@@ -117,6 +118,7 @@ export function validateSessionInput(raw: SessionInput): NormalizedSession {
   }));
   const v: NormalizedSession = {
     date: clean(raw.date, 10),
+    category: clean(raw.category, 40),
     unit: clean(raw.unit, MAX.text),
     topic: clean(uniq(cases.map((c) => c.topic).filter(Boolean)).join('、'), 300),
     checkinTime: clean(raw.checkinTime, 5),
