@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
 import { motion } from 'motion/react';
-import { AlertTriangle, ArrowUpRight, BarChart3, BellRing, CalendarDays, ClipboardCheck, Copy, Plus, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, BarChart3, BellRing, CalendarDays, ClipboardCheck, Copy, Plus, Sparkles, Tag } from 'lucide-react';
 import { useCanEdit, useSnap, spName } from '../lib/store';
-import { computeOverview, needsVerification } from '../../shared/stats';
+import { categoryOf, computeOverview, isCountable, needsVerification } from '../../shared/stats';
 import { addDays, fmtDate, fmtDateShort, fmtHours, weekdayLabel } from '../../shared/time';
-import { notifyState, renderSummary } from '../../shared/template';
+import { UNCATEGORIZED, categoryOptions, notifyState, renderSummary } from '../../shared/template';
 import { copyText } from '../lib/csv';
 import { parseSeeking, seekingTotal } from '../../shared/seeking';
 import { navigate } from '../lib/router';
@@ -28,6 +28,25 @@ export default function Overview() {
     () => snap.sessions.filter((s) => !s.isDeleted && s.status !== 'cancelled' && s.date >= today && seekingTotal(s.seeking) > 0).sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime)),
     [snap.sessions, today],
   );
+
+  /** 本年度各演出類型：已完成（核定）場次，與尚未完成核定的預定場次 */
+  const byCategory = useMemo(() => {
+    const year = today.slice(0, 4);
+    const done = new Map<string, number>(), planned = new Map<string, number>();
+    for (const s of snap.sessions) {
+      if (s.isDeleted || s.status === 'cancelled' || !s.date.startsWith(year)) continue;
+      const k = categoryOf(s);
+      const counted = (d.bySession.get(s.sessionId) || []).some((a) => isCountable(a, s));
+      const m = counted ? done : planned;
+      m.set(k, (m.get(k) || 0) + 1);
+    }
+    const keys = [...new Set([...categoryOptions(snap.settings.categories), ...done.keys(), ...planned.keys()])]
+      .sort((a, b) => (a === UNCATEGORIZED ? 1 : 0) - (b === UNCATEGORIZED ? 1 : 0));
+    return keys.map((k) => ({ key: k, done: done.get(k) || 0, planned: planned.get(k) || 0 }))
+      .filter((r) => r.key !== UNCATEGORIZED || r.done + r.planned > 0);
+  }, [snap.sessions, snap.settings.categories, d, today]);
+  const categoryTotal = byCategory.reduce((n, r) => n + r.done, 0);
+  const categoryPlanned = byCategory.reduce((n, r) => n + r.planned, 0);
 
   const tomorrowItems = useMemo(
     () => snap.sessions.filter((s) => s.date === tomorrow && s.status === 'scheduled').sort((a, b) => a.startTime.localeCompare(b.startTime)),
@@ -171,8 +190,38 @@ export default function Overview() {
           <p className="mt-2 text-[11px] leading-snug text-ink-3">含預定與已完成，不含取消、缺席</p>
         </motion.section>
 
+        {/* 本年度各演出類型 */}
+        <motion.section {...enter(4)} className={cx(tile, 'md:col-span-6 xl:col-span-12')}>
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <div className="eyebrow flex items-center gap-1"><Tag className="size-3.5" />Categories · {today.slice(0, 4)}</div>
+              <h2 className="mt-1 text-[16px] font-semibold">本年度各演出類型累積場次</h2>
+            </div>
+            <div className="flex items-center gap-3 text-[13px] text-ink-3">
+              <span>已完成 <b className="num text-[18px] text-pine">{categoryTotal}</b> 場{categoryPlanned > 0 && <>，另有 <b className="num text-ink-2">{categoryPlanned}</b> 場預定／待核定</>}</span>
+              <Button size="sm" variant="ghost" onClick={() => navigate('/analytics')}>詳細統計 →</Button>
+            </div>
+          </div>
+          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
+            {byCategory.map((r) => (
+              <li key={r.key}>
+                <button
+                  onClick={() => navigate('/analytics', { year: today.slice(0, 4), category: r.key })}
+                  title={`${r.key}：已完成 ${r.done} 場${r.planned ? `，預定／待核定 ${r.planned} 場` : ''}`}
+                  className={cx('flex h-full w-full flex-col rounded-[16px] px-3 py-2.5 text-left ring-1 transition hover:ring-pine/40', r.done ? 'bg-mist/60 ring-transparent' : 'bg-white ring-line')}
+                >
+                  <span className={cx('truncate text-[13px]', r.key === UNCATEGORIZED ? 'text-ink-3' : 'text-ink-2')}>{r.key}</span>
+                  <span className={cx('num mt-1 text-[28px] font-semibold leading-none', r.done ? 'text-pine' : 'text-ink-3/60')}>{r.done}<span className="ml-1 text-[12px] font-normal text-ink-3">場</span></span>
+                  <span className="mt-1 h-4 text-[11px] text-ink-3">{r.planned > 0 && `＋${r.planned} 場預定`}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] text-ink-3">「已完成」與年度成果相同口徑：已完成且已核定出席的場次；「預定」為今年尚未完成或尚未核定的場次（不含取消）。點擊類型可查看明細。</p>
+        </motion.section>
+
         {/* 明日提醒 */}
-        {canEdit && <motion.section {...enter(4)} className={cx(tile, 'border-gold/50 bg-gold-50/60 md:col-span-6 xl:col-span-5')}>
+        {canEdit && <motion.section {...enter(5)} className={cx(tile, 'border-gold/50 bg-gold-50/60 md:col-span-6 xl:col-span-5')}>
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="eyebrow flex items-center gap-1 !text-gold-600"><BellRing className="size-3.5" />Tomorrow · {fmtDateShort(tomorrow)}</div>
@@ -201,7 +250,7 @@ export default function Overview() {
         </motion.section>}
 
         {/* 近期排程 */}
-        <motion.section {...enter(5)} className={cx(tile, 'md:col-span-6 xl:col-span-7 xl:row-span-2')}>
+        <motion.section {...enter(6)} className={cx(tile, 'md:col-span-6 xl:col-span-7 xl:row-span-2')}>
           <div className="mb-3 flex items-center justify-between">
             <div><div className="eyebrow">Upcoming</div><h2 className="mt-1 text-[16px] font-semibold">近期演出排程</h2></div>
             <Button size="sm" variant="ghost" onClick={() => navigate('/schedule', { view: 'list' })}>全部排程 →</Button>
@@ -227,7 +276,7 @@ export default function Overview() {
           )}
         </motion.section>
         {/* 尚未核定 */}
-        {canEdit && <motion.section {...enter(6)} className={cx(tile, 'md:col-span-6 xl:col-span-5')}>
+        {canEdit && <motion.section {...enter(7)} className={cx(tile, 'md:col-span-6 xl:col-span-5')}>
           <div className="mb-3 flex items-center justify-between">
             <div><div className="eyebrow">Verification</div><h2 className="mt-1 text-[16px] font-semibold">尚未核定的演出紀錄</h2></div>
             <Badge tone={pendingVerify.length ? 'warn' : 'ok'}>{pendingVerify.length} 場</Badge>
