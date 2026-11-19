@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Download, Pencil, Plus, Search, UserRound, Users, X } from 'lucide-react';
 import type { SP, SpInput, SpStatus } from '../../shared/types';
-import { AppError, ageOf, certExpiryYear, expiryBucket, isCertified, seniorityOf, validateSpInput, type ExpiryBucket } from '../../shared/validate';
+import { AppError, CERT_REQUIRED_MINUTES, ageOf, certExpiryYear, expiryBucket, isCertified, seniorityOf, validateSpInput, type ExpiryBucket } from '../../shared/validate';
 import { download, toCsv } from '../lib/csv';
-import { fmtDate, fmtHours, yearOf } from '../../shared/time';
-import { isCountable } from '../../shared/stats';
+import { fmtDate, fmtHours } from '../../shared/time';
+import { computeCertHours, type CertHours } from '../../shared/stats';
 import { useSnap } from '../lib/store';
 import { navigate } from '../lib/router';
 import { Drawer, useToast } from '../components/overlay';
@@ -18,33 +18,28 @@ export default function Directory() {
   const setOne = <K extends keyof Filters>(k: K, v: Filters[K]) => setF((x) => ({ ...x, [k]: v }));
   const rocNow = Number(snap.today.slice(0, 4)) - 1911;
   const [editing, setEditing] = useState<SP | 'new' | null>(null);
-  const year = yearOf(snap.today);
 
-  const stats = useMemo(() => {
+  /** 核定時數：依學會認證期間（例如 115-117）三年合計；沒有認證期間者以今年計 */
+  const certHours = useMemo(() => computeCertHours(snap, snap.today), [snap]);
+  const lastDates = useMemo(() => {
     const sm = new Map(snap.sessions.map((s) => [s.sessionId, s]));
-    const m = new Map<string, { minutes: number; times: number; last: string }>();
+    const m = new Map<string, string>();
     for (const a of snap.assignments) {
       const s = sm.get(a.sessionId);
-      if (!s) continue;
-      const r = m.get(a.spId) || { minutes: 0, times: 0, last: '' };
-      if (isCountable(a, s) && yearOf(s.date) === year) {
-        r.minutes += a.approvedMinutes || 0;
-        r.times++;
-      }
-      if (!a.isDeleted && s.status !== 'cancelled' && a.attendance !== 'cancelled' && s.date <= snap.today && s.date > r.last) r.last = s.date;
-      m.set(a.spId, r);
+      if (!s || a.isDeleted || s.status === 'cancelled' || a.attendance === 'cancelled' || s.date > snap.today) continue;
+      if (s.date > (m.get(a.spId) || '')) m.set(a.spId, s.date);
     }
     return m;
-  }, [snap, year]);
+  }, [snap]);
 
   const rows = useMemo(() => {
     const k = q.trim().toLowerCase();
     return snap.sps
       .filter((p) => !status || p.status === status)
-      .filter((p) => matches(p, f, snap.today))
+      .filter((p) => matches(p, f, snap.today, certHours.get(p.spId)))
       .filter((p) => !k || [p.name, p.lineNote, p.phone, p.note, p.certNo].join(' ').toLowerCase().includes(k))
       .sort((a, b) => (a.status === b.status ? a.name.localeCompare(b.name, 'zh-Hant') : ['active', 'paused', 'inactive'].indexOf(a.status) - ['active', 'paused', 'inactive'].indexOf(b.status)));
-  }, [snap.sps, snap.today, q, status, f]);
+  }, [snap.sps, snap.today, q, status, f, certHours]);
 
   const counts = { active: 0, paused: 0, inactive: 0 } as Record<SpStatus, number>;
   snap.sps.forEach((p) => counts[p.status]++);
@@ -57,7 +52,7 @@ export default function Directory() {
         title="SP 人員"
         desc="SP_ID 為系統唯一識別碼，改名不影響歷史演出紀錄。停用的 SP 不會出現在排程選單，但保留完整履歷。"
         actions={<>
-          <Button icon={<Download className="size-4" />} onClick={() => exportRoster(rows, snap.today)} disabled={!rows.length}>匯出名冊</Button>
+          <Button icon={<Download className="size-4" />} onClick={() => exportRoster(rows, snap.today, certHours)} disabled={!rows.length}>匯出名冊</Button>
           <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing('new')}>新增 SP</Button>
         </>}
       />
@@ -82,6 +77,17 @@ export default function Directory() {
           );
         })}
         <span className="self-center text-[12px] text-ink-3">（在職與暫停者；依「學會認證」期間的結束年判斷）</span>
+        {(() => {
+          const n = snap.sps.filter((p) => p.status !== 'inactive' && certHours.get(p.spId)?.met === false).length;
+          const on = f.hours === 'unmet';
+          return (
+            <button onClick={() => setOne('hours', on ? '' : 'unmet')} className={cx('flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[13px] transition', on ? 'border-pine bg-pine text-white' : 'border-line bg-white hover:border-pine/40')}>
+              <span className={cx('size-2 rounded-full', !on && 'bg-warn')} style={on ? { background: '#fff' } : undefined} />
+              認證期間未達 {CERT_REQUIRED_MINUTES / 60} 小時
+              <b className="num">{n}</b>
+            </button>
+          );
+        })()}
       </div>
       <Card className="!p-4">
         <div className="mb-3 flex flex-wrap gap-2">
@@ -110,6 +116,11 @@ export default function Directory() {
             <option value="later">{rocNow + 2} 年以後到期</option>
             <option value="none">無認證期間</option>
             {expiryYears(snap.sps).map((y) => <option key={y} value={`y${y}`}>{y} 年到期</option>)}
+          </select>
+          <select className="field w-auto" value={f.hours} onChange={(e) => setOne('hours', e.target.value as Filters['hours'])} aria-label="認證期間時數">
+            <option value="">認證期間時數：全部</option>
+            <option value="met">已達 {CERT_REQUIRED_MINUTES / 60} 小時</option>
+            <option value="unmet">未達 {CERT_REQUIRED_MINUTES / 60} 小時</option>
           </select>
           <select className="field w-auto" value={f.certStatus} onChange={(e) => setOne('certStatus', e.target.value)} aria-label="證書狀態">
             <option value="">證書狀態：全部</option>
@@ -146,11 +157,12 @@ export default function Directory() {
           <div className="overflow-x-auto">
             <table className="tbl">
               <thead>
-                <tr><th>姓名</th><th className="max-md:hidden">性別</th><th className="text-right max-md:hidden">年齡</th><th className="max-lg:hidden">身分</th><th>級數</th><th className="max-lg:hidden">學會認證</th><th>到期</th><th className="max-md:hidden">證書狀態</th><th className="text-right">{year} 核定時數</th><th className="text-right max-md:hidden">人次</th><th className="max-xl:hidden">最近演出</th><th>在職</th><th /></tr>
+                <tr><th>姓名</th><th className="max-md:hidden">性別</th><th className="text-right max-md:hidden">年齡</th><th className="max-lg:hidden">身分</th><th>級數</th><th className="max-lg:hidden">學會認證</th><th>到期</th><th className="max-md:hidden">證書狀態</th><th className="text-right" title="依學會認證期間（例如 115-117）三年合計；沒有認證期間者以今年計">認證期間核定時數</th><th className="text-right max-md:hidden">人次</th><th className="max-xl:hidden">最近演出</th><th>在職</th><th /></tr>
               </thead>
               <tbody>
                 {rows.map((p) => {
-                  const s = stats.get(p.spId);
+                  const h = certHours.get(p.spId);
+                  const last = lastDates.get(p.spId);
                   return (
                     <tr key={p.spId}>
                       <td>
@@ -167,9 +179,9 @@ export default function Directory() {
                       <td className="num max-lg:hidden whitespace-nowrap text-ink-2">{p.assocCert || '—'}</td>
                       <td><ExpiryBadge p={p} today={snap.today} /></td>
                       <td className="max-md:hidden">{p.certStatus ? <Badge tone={p.certStatus === '符合' ? 'ok' : p.certStatus === '尚未認證' ? 'neutral' : 'warn'}>{p.certStatus}</Badge> : <span className="text-ink-3">—</span>}</td>
-                      <td className="num text-right font-semibold">{fmtHours(s?.minutes || 0)}</td>
-                      <td className="num text-right max-md:hidden">{s?.times || 0}</td>
-                      <td className="num max-xl:hidden whitespace-nowrap text-ink-2">{s?.last ? fmtDate(s.last) : '—'}</td>
+                      <td className="text-right"><CertHoursCell h={h} /></td>
+                      <td className="num text-right max-md:hidden">{h?.personTimes || 0}</td>
+                      <td className="num max-xl:hidden whitespace-nowrap text-ink-2">{last ? fmtDate(last) : '—'}</td>
                       <td><Badge tone={SP_STATUS[p.status].tone}>{SP_STATUS[p.status].label}</Badge></td>
                       <td className="text-right"><Button size="sm" variant="ghost" icon={<Pencil className="size-3.5" />} onClick={() => setEditing(p)}>編輯</Button></td>
                     </tr>
@@ -270,19 +282,46 @@ function Choice({ value, options, onChange }: { value: string; options: string[]
 }
 
 /** 依原名冊格式匯出 */
-export function exportRoster(sps: SP[], today: string) {
+export function exportRoster(sps: SP[], today: string, certHours?: Map<string, CertHours>) {
   download(`標準化病人名冊_${today}.csv`, toCsv(
-    ['姓名', '性別', '年齡', '生日', '首次認證', 'SP年資', '學會認證', '證書字號', '身分', '級數', '證書狀態', '是否協會會員', '在職狀態', '聯絡電話', '電子郵件', '備註'],
-    sps.map((p) => [p.name, p.gender, ageOf(p.birthday, today), p.birthday, p.firstCertYear, seniorityOf(p.firstCertYear, today), p.assocCert, p.certNo, p.role, p.level, p.certStatus, p.isMember, SP_STATUS[p.status].label, p.phone, p.email, p.note]),
+    ['姓名', '性別', '年齡', '生日', '首次認證', 'SP年資', '學會認證', '證書字號', '身分', '級數', '證書狀態', '是否協會會員', '在職狀態', '時數採計期間', '期間核定時數', `是否達${CERT_REQUIRED_MINUTES / 60}小時`, '聯絡電話', '電子郵件', '備註'],
+    sps.map((p) => {
+      const h = certHours?.get(p.spId);
+      return [
+        p.name, p.gender, ageOf(p.birthday, today), p.birthday, p.firstCertYear, seniorityOf(p.firstCertYear, today), p.assocCert, p.certNo, p.role, p.level, p.certStatus, p.isMember, SP_STATUS[p.status].label,
+        h ? periodLabel(h) : '', h ? (h.minutes / 60).toFixed(2) : '', h?.met == null ? '' : h.met ? '是' : '否',
+        p.phone, p.email, p.note,
+      ];
+    }),
   ));
 }
 
-interface Filters { cert: '' | 'yes' | 'no'; expiry: '' | ExpiryBucket | `y${number}`; certStatus: string; level: string; role: string; member: string; gender: string }
-const NO_FILTER: Filters = { cert: '', expiry: '', certStatus: '', level: '', role: '', member: '', gender: '' };
+const periodLabel = (h: CertHours) => (h.fromCert ? `${h.start}–${h.end}` : `${h.end}（無認證期間，以今年計）`);
+
+/** 認證期間核定時數：三年合計，並標示是否已達學會要求的 4 小時 */
+function CertHoursCell({ h }: { h: CertHours | undefined }) {
+  if (!h) return <span className="num font-semibold">0</span>;
+  const short = Math.max(0, CERT_REQUIRED_MINUTES - h.minutes);
+  return (
+    <div className="whitespace-nowrap" title={h.fromCert ? `學會認證 ${h.start}–${h.end} 年合計` : '沒有學會認證期間，以今年計'}>
+      <div className="num font-semibold">{fmtHours(h.minutes)}</div>
+      <div className="text-[11px] text-ink-3">
+        <span className="num">{h.fromCert ? `${h.start}–${h.end}` : `${h.end} 年`}</span>
+        {h.met === true && <span className="ml-1 text-ok">· 已達標</span>}
+        {h.met === false && <span className="ml-1 text-warn">· 差 <span className="num">{fmtHours(short)}</span> 時</span>}
+      </div>
+    </div>
+  );
+}
+
+interface Filters { hours: '' | 'met' | 'unmet'; cert: '' | 'yes' | 'no'; expiry: '' | ExpiryBucket | `y${number}`; certStatus: string; level: string; role: string; member: string; gender: string }
+const NO_FILTER: Filters = { hours: '', cert: '', expiry: '', certStatus: '', level: '', role: '', member: '', gender: '' };
 const distinct = (xs: string[]) => [...new Set(xs.filter(Boolean))].sort();
 const expiryYears = (sps: SP[]) => [...new Set(sps.map((p) => certExpiryYear(p.assocCert)).filter((y): y is number => !!y))].sort((a, b) => a - b);
 
-function matches(p: SP, f: Filters, today: string): boolean {
+function matches(p: SP, f: Filters, today: string, h: CertHours | undefined): boolean {
+  if (f.hours === 'met' && h?.met !== true) return false;
+  if (f.hours === 'unmet' && h?.met !== false) return false;
   if (f.cert === 'yes' && !isCertified(p)) return false;
   if (f.cert === 'no' && isCertified(p)) return false;
   if (f.expiry) {

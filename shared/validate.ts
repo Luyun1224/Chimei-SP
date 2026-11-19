@@ -197,6 +197,24 @@ export function certExpiryYear(assocCert: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/** 學會認證要求：認證期間（三年）內核定演出時數需達 4 小時 */
+export const CERT_REQUIRED_MINUTES = 240;
+
+/**
+ * 學會認證期間（民國年）：「115-117」→ { start: 115, end: 117 }。
+ * 只填到期年（例如「117」）時，視為三年期，往前推為 115–117。無法判斷回傳 null。
+ */
+export function certPeriod(assocCert: string): { start: number; end: number } | null {
+  const t = (assocCert || '').trim();
+  const m = /(\d{2,3})\s*[-–—~～至到]\s*(\d{2,3})\s*$/.exec(t);
+  if (m) {
+    const a = Number(m[1]), b = Number(m[2]);
+    return { start: Math.min(a, b), end: Math.max(a, b) };
+  }
+  const end = certExpiryYear(t);
+  return end ? { start: end - 2, end } : null;
+}
+
 /** 是否已認證：有學會認證期間或證書字號，且證書狀態不是「尚未認證」 */
 export function isCertified(p: { assocCert: string; certNo: string; certStatus: string }): boolean {
   if (p.certStatus === '尚未認證') return false;

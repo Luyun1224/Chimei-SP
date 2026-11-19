@@ -9,6 +9,7 @@
 import type { Assignment, SP, Session, SessionStatus } from './types';
 import { addDays, daysBetween, monthOf, startOfWeek, yearOf } from './time';
 import { UNCATEGORIZED } from './template';
+import { CERT_REQUIRED_MINUTES, certPeriod } from './validate';
 
 export interface StatFilter {
   year: number;
@@ -296,4 +297,51 @@ export function computeOverview(
     pending: yearStats.pending,
     upcoming: live.filter((s) => s.date >= today && s.status === 'scheduled').sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime)),
   };
+}
+
+export interface CertHours {
+  /** 採計區間（民國年，含頭尾） */
+  start: number;
+  end: number;
+  /** true：依學會認證期間；false：沒有認證期間，改以今年計 */
+  fromCert: boolean;
+  minutes: number;
+  personTimes: number;
+  /** 認證期間內是否已達 4 小時（無認證期間時為 null） */
+  met: boolean | null;
+}
+
+/**
+ * 每位 SP 在「學會認證期間」（例如 115-117 → 民國 115～117 年，三年合計）的核定演出時數。
+ * 學會規定認證期間內累計達 4 小時即符合；沒有認證期間的 SP 以今年計。
+ */
+export function computeCertHours(
+  data: { sessions: Session[]; assignments: Assignment[]; sps: SP[] },
+  today: string,
+): Map<string, CertHours> {
+  const sessionMap = new Map(data.sessions.map((s) => [s.sessionId, s]));
+  const rocNow = yearOf(today) - 1911;
+  const out = new Map<string, CertHours>();
+  for (const p of data.sps) {
+    const period = certPeriod(p.assocCert);
+    out.set(p.spId, {
+      start: period?.start ?? rocNow,
+      end: period?.end ?? rocNow,
+      fromCert: !!period,
+      minutes: 0,
+      personTimes: 0,
+      met: null,
+    });
+  }
+  for (const a of data.assignments) {
+    const r = out.get(a.spId);
+    const s = sessionMap.get(a.sessionId);
+    if (!r || !s || !isCountable(a, s)) continue;
+    const y = yearOf(s.date) - 1911;
+    if (y < r.start || y > r.end) continue;
+    r.minutes += a.approvedMinutes as number;
+    r.personTimes++;
+  }
+  for (const r of out.values()) if (r.fromCert) r.met = r.minutes >= CERT_REQUIRED_MINUTES;
+  return out;
 }
