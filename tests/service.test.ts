@@ -371,6 +371,37 @@ describe('認證到期篩選', () => {
     expect(isCertified({ assocCert: '113-115', certNo: '', certStatus: '符合' })).toBe(true);
     expect(isCertified({ assocCert: '', certNo: '', certStatus: '尚未認證' })).toBe(false);
   });
+
+  it('認證期間：115-117 視為民國 115～117 三年；只填到期年時往前推三年', async () => {
+    const { certPeriod } = await import('../shared/validate');
+    expect(certPeriod('115-117')).toEqual({ start: 115, end: 117 });
+    expect(certPeriod('115～117')).toEqual({ start: 115, end: 117 });
+    expect(certPeriod('117')).toEqual({ start: 115, end: 117 });
+    expect(certPeriod('')).toBeNull();
+  });
+
+  it('核定時數依學會認證期間三年合計，達 4 小時即符合', async () => {
+    const { computeCertHours } = await import('../shared/stats');
+    const sp = (spId: string, assocCert: string) => ({ spId, assocCert }) as never;
+    const ses = (sessionId: string, date: string) => ({ sessionId, date, status: 'completed', isDeleted: false }) as never;
+    const asg = (spId: string, sessionId: string, approvedMinutes: number) =>
+      ({ spId, sessionId, approvedMinutes, verifyStatus: 'verified', attendance: 'present', isDeleted: false }) as never;
+    const data = {
+      sps: [sp('A', '115-117'), sp('B', '115-117'), sp('C', '')],
+      // 2025＝民國 114（期間外）、2026＝115、2028＝117、2029＝118（期間外）
+      sessions: [ses('s114', '2025-06-01'), ses('s115', '2026-03-01'), ses('s117', '2028-05-01'), ses('s118', '2029-01-01')],
+      assignments: [
+        asg('A', 's114', 600), asg('A', 's115', 120), asg('A', 's117', 120), asg('A', 's118', 600),
+        asg('B', 's115', 180),
+        asg('C', 's114', 300), asg('C', 's115', 60),
+      ],
+    };
+    const r = computeCertHours(data, '2026-11-10');
+    expect(r.get('A')).toMatchObject({ start: 115, end: 117, fromCert: true, minutes: 240, personTimes: 2, met: true });
+    expect(r.get('B')).toMatchObject({ minutes: 180, met: false });
+    // 無認證期間：以今年（115）計，不判斷是否達標
+    expect(r.get('C')).toMatchObject({ start: 115, end: 115, fromCert: false, minutes: 60, met: null });
+  });
 });
 
 describe('權限', () => {

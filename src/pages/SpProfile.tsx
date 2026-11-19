@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import { ArrowLeft, ChevronDown, Download, Pencil } from 'lucide-react';
-import { computeProfile, isCountable, topicOf } from '../../shared/stats';
-import { ageOf, seniorityOf } from '../../shared/validate';
+import { computeCertHours, computeProfile, isCountable, topicOf } from '../../shared/stats';
+import { CERT_REQUIRED_MINUTES, ageOf, seniorityOf } from '../../shared/validate';
 import { fmtDate, fmtDuration, fmtHours, yearOf } from '../../shared/time';
 import { useSnap } from '../lib/store';
 import { navigate, type Route } from '../lib/router';
@@ -25,6 +25,7 @@ export default function SpProfile({ route }: { route: Route }) {
   const [open, setOpen] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const p = useMemo(() => computeProfile(snap, spId, year), [snap, spId, year]);
+  const ch = useMemo(() => computeCertHours(snap, snap.today).get(spId), [snap, spId]);
 
   const records = useMemo(
     () =>
@@ -88,7 +89,14 @@ export default function SpProfile({ route }: { route: Route }) {
 
       <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
         <Card className="col-span-2 bg-pine !text-white md:col-span-1 xl:col-span-2"><Stat tone="white" big label={`${year} 年核定演出時數`} value={fmtHours(p.yearMinutes)} unit="小時" foot={`${p.yearPersonTimes} 人次 · ${p.yearSessions} 場`} /></Card>
-        <Card><Stat label="本年度演出次數" value={p.yearPersonTimes} unit="次" /></Card>
+        <Card>
+          <Stat
+            label={ch?.fromCert ? `認證期間 ${ch.start}–${ch.end} 核定時數` : '認證期間核定時數'}
+            value={fmtHours(ch?.minutes || 0)}
+            unit="小時"
+            foot={!ch?.fromCert ? '尚無學會認證期間（以今年計）' : ch.met ? `已達 ${CERT_REQUIRED_MINUTES / 60} 小時` : `尚差 ${fmtHours(CERT_REQUIRED_MINUTES - ch.minutes)} 小時（需 ${CERT_REQUIRED_MINUTES / 60} 小時）`}
+          />
+        </Card>
         <Card><Stat label="歷年累積時數" value={fmtHours(p.lifetimeMinutes)} unit="小時" foot={`累計 ${p.lifetimePersonTimes} 次`} /></Card>
         <Card><Stat label="參與教案數" value={p.topicCount} unit="個" foot="歷年不重複教案" /></Card>
         <Card><Stat label="最近一次演出" value={<span className="text-[22px]">{p.lastDate ? fmtDate(p.lastDate).slice(0, 10) : '—'}</span>} /></Card>
