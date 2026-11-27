@@ -182,7 +182,7 @@ export default function Analytics({ route }: { route: Route }) {
 
       <div className="mb-4 grid gap-4 lg:grid-cols-3">
         <Card>
-          <CardHead eyebrow="D · Units" title="各申請單位 SP 動用（人次）" />
+          <CardHead eyebrow="D · Units" title="各申請單位 SP 動用（人次）" action={<button className="text-[12px] text-pine underline-offset-2 hover:underline" onClick={() => navigate(f.unit ? `/units/${encodeURIComponent(f.unit)}` : '/units', { year: f.year })}>科部查詢 →</button>} />
           {st.byUnit.length ? <RankBars rows={st.byUnit} valueKey="personTimes" unit="人次" onSelect={(k) => setF({ unit: f.unit === k ? undefined : k })} selected={f.unit} max={8} /> : <Empty title="尚無資料" />}
         </Card>
         <Card>

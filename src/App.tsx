@@ -18,6 +18,7 @@ import Analytics from './pages/Analytics';
 import Report from './pages/Report';
 import Settings from './pages/Settings';
 import Fees from './pages/Fees';
+import Units from './pages/Units';
 
 function Pages() {
   const route = useRoute();
@@ -40,7 +41,7 @@ function Pages() {
 
   if (route.parts[0] === 'bind') return <LoginScreen onDone={async () => { window.location.hash = '#/overview'; await reload(); }} />;
   const isPublic = snap?.access === 'public';
-  const PUBLIC_PAGES = ['overview', 'schedule', 'analytics', 'report'];
+  const PUBLIC_PAGES = ['overview', 'schedule', 'analytics', 'report', 'units'];
   const page = (() => {
     const key = route.parts[0] || 'overview';
     if (isPublic && !PUBLIC_PAGES.includes(key)) return <Overview />;
@@ -52,6 +53,7 @@ function Pages() {
       case 'analytics': return <Analytics route={route} />;
       case 'report': return <Report route={route} />;
       case 'fees': return <Fees />;
+      case 'units': return <Units route={route} />;
       case 'settings': return <Settings />;
       default: return <Overview />;
     }
