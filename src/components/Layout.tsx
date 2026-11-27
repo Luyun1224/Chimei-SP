@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { BarChart3, BellRing, CalendarDays, ClipboardCheck, LayoutGrid, Menu, Settings, Users, Wallet, X } from 'lucide-react';
+import { BarChart3, BellRing, Building2, CalendarDays, ClipboardCheck, LayoutGrid, Menu, Settings, Users, Wallet, X } from 'lucide-react';
 import { navigate, type Route } from '../lib/router';
 import { useData } from '../lib/store';
 import { cx } from './ui';
@@ -16,10 +16,11 @@ export const NAV = [
   { no: '05', path: '/verify', label: '演出核定', en: 'Verification', icon: ClipboardCheck },
   { no: '06', path: '/fees', label: '演出費用', en: 'Fees', icon: Wallet },
   { no: '07', path: '/analytics', label: '成果分析', en: 'Analytics', icon: BarChart3 },
-  { no: '08', path: '/settings', label: '系統設定', en: 'Settings', icon: Settings },
+  { no: '08', path: '/units', label: '科部查詢', en: 'Departments', icon: Building2 },
+  { no: '09', path: '/settings', label: '系統設定', en: 'Settings', icon: Settings },
 ];
 
-const PUBLIC_NAV = ['/overview', '/schedule', '/analytics'];
+const PUBLIC_NAV = ['/overview', '/schedule', '/analytics', '/units'];
 function NavList({ route, onNav }: { route: Route; onNav?: () => void }) {
   const { snap } = useData();
   const items = snap?.access === 'public' ? NAV.filter((n) => PUBLIC_NAV.includes(n.path)) : NAV;

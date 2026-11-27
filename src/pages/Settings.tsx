@@ -52,7 +52,7 @@ export default function Settings() {
 
   return (
     <div>
-      <PageHeader no="08" en="Settings" title="系統設定" desc="Calendar、常用選項與資料維護。管理員帳號白名單與試算表 ID 存放於 Apps Script 的 Script Properties，不在前端顯示或修改。" />
+      <PageHeader no="09" en="Settings" title="系統設定" desc="Calendar、常用選項與資料維護。管理員帳號白名單與試算表 ID 存放於 Apps Script 的 Script Properties，不在前端顯示或修改。" />
       <Card className="mb-4">
         <CardHead eyebrow="Web App" title={<span className="flex items-center gap-2"><Link2 className="size-5 text-pine" />正式系統網址</span>} />
         <div className="flex flex-wrap items-center gap-2">
